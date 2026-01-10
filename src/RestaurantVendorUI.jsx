@@ -135,15 +135,38 @@ const RestaurantVendorUI = () => {
 
             <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9 gap-2">
               {items.map((item) => (
-                <div key={item.id} className="border bg-white p-2 text-xs flex flex-col gap-1">
-                  <div className="aspect-square bg-stone-100" />
-                  <div className="truncate font-medium">{item.name}</div>
+                <div
+                  key={item.id}
+                  className="border bg-white p-1 text-[10px] flex flex-col gap-0.5"
+                >
+                  {/* Smaller image box */}
+                  <div className="aspect-[4/3] bg-stone-100" />
+
+                  <div className="truncate font-medium leading-tight">
+                    {item.name}
+                  </div>
+
                   <div className="flex justify-between items-center">
-                    <span>₹{item.price}</span>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => decreaseItem(item)} className="border px-1">−</button>
-                      <span>{getQty(item.id)}</span>
-                      <button onClick={() => addToCart(item)} className="border px-1">+</button>
+                    <span className="text-[10px]">₹{item.price}</span>
+
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => decreaseItem(item)}
+                        className="border px-1 leading-none text-[10px]"
+                      >
+                        −
+                      </button>
+
+                      <span className="w-3 text-center text-[10px]">
+                        {getQty(item.id)}
+                      </span>
+
+                      <button
+                        onClick={() => addToCart(item)}
+                        className="border px-1 leading-none text-[10px]"
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
                 </div>
