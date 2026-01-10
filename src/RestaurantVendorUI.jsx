@@ -26,37 +26,50 @@ const RestaurantVendorUI = () => {
 
   const menu = {
     Starters: [
-      { id: 1, name: 'Paneer Tikka', price: 180, desc: 'Grilled cottage cheese' },
-      { id: 2, name: 'Spring Rolls', price: 120, desc: 'Veg crispy rolls' },
-      { id: 3, name: 'Chicken Wings', price: 220, desc: 'Buffalo wings' },
-      { id: 4, name: 'Veg Cutlet', price: 90, desc: 'Crispy veg patty' },
-      { id: 5, name: 'French Fries', price: 80, desc: 'Classic fries' },
-      { id: 6, name: 'Cheese Balls', price: 140, desc: 'Mozzarella bites' },
-      { id: 7, name: 'Nachos', price: 160, desc: 'Cheese loaded' },
+      { id: 1, name: 'Paneer Tikka', price: 180 },
+      { id: 2, name: 'Spring Rolls', price: 120 },
+      { id: 3, name: 'Chicken Wings', price: 220 },
+      { id: 4, name: 'Veg Cutlet', price: 90 },
+      { id: 5, name: 'French Fries', price: 80 },
+      { id: 6, name: 'Cheese Balls', price: 140 },
+      { id: 7, name: 'Nachos', price: 160 },
+      { id: 8, name: 'Samosa', price: 30 },
+      { id: 9, name: 'Chilli Paneer', price: 190 },
+      { id: 10, name: 'Manchurian', price: 150 },
     ],
     'Main Course': [
-      { id: 8, name: 'Butter Chicken', price: 280, desc: 'Creamy curry' },
-      { id: 9, name: 'Dal Makhani', price: 180, desc: 'Slow cooked dal' },
-      { id: 10, name: 'Paneer Butter Masala', price: 240, desc: 'Rich gravy' },
-      { id: 11, name: 'Veg Biryani', price: 210, desc: 'Spiced rice' },
-      { id: 12, name: 'Chicken Biryani', price: 260, desc: 'Hyderabadi style' },
-      { id: 13, name: 'Kadhai Paneer', price: 230, desc: 'Spicy masala' },
-      { id: 14, name: 'Rajma Chawal', price: 170, desc: 'Comfort food' },
+      { id: 11, name: 'Butter Chicken', price: 280 },
+      { id: 12, name: 'Dal Makhani', price: 180 },
+      { id: 13, name: 'Paneer Butter Masala', price: 240 },
+      { id: 14, name: 'Veg Biryani', price: 210 },
+      { id: 15, name: 'Chicken Biryani', price: 260 },
+      { id: 16, name: 'Kadhai Paneer', price: 230 },
+      { id: 17, name: 'Rajma Chawal', price: 170 },
+      { id: 18, name: 'Chole Bhature', price: 160 },
+      { id: 19, name: 'Aloo Paratha', price: 80 },
+      { id: 20, name: 'Egg Curry', price: 150 },
+      { id: 21, name: 'Chicken Curry', price: 240 },
+      { id: 22, name: 'Mix Veg', price: 170 },
     ],
     Breads: [
-      { id: 15, name: 'Naan', price: 40, desc: 'Tandoor bread' },
-      { id: 16, name: 'Butter Naan', price: 50, desc: 'Buttery naan' },
-      { id: 17, name: 'Garlic Naan', price: 60, desc: 'Garlic topping' },
-      { id: 18, name: 'Roti', price: 20, desc: 'Wheat roti' },
-      { id: 19, name: 'Paratha', price: 45, desc: 'Layered bread' },
-      { id: 20, name: 'Lachha Paratha', price: 55, desc: 'Crispy layers' },
+      { id: 23, name: 'Roti', price: 20 },
+      { id: 24, name: 'Butter Roti', price: 25 },
+      { id: 25, name: 'Naan', price: 40 },
+      { id: 26, name: 'Butter Naan', price: 50 },
+      { id: 27, name: 'Garlic Naan', price: 60 },
+      { id: 28, name: 'Lachha Paratha', price: 55 },
+      { id: 29, name: 'Missi Roti', price: 35 },
+      { id: 30, name: 'Kulcha', price: 45 },
     ],
     Beverages: [
-      { id: 21, name: 'Cold Coffee', price: 120, desc: 'With ice cream' },
-      { id: 22, name: 'Lassi', price: 80, desc: 'Sweet yogurt' },
-      { id: 23, name: 'Lemon Soda', price: 60, desc: 'Refreshing' },
-      { id: 24, name: 'Cold Drink', price: 50, desc: 'Chilled soda' },
-      { id: 25, name: 'Water Bottle', price: 20, desc: 'Packaged water' },
+      { id: 31, name: 'Water', price: 20 },
+      { id: 32, name: 'Cold Drink', price: 50 },
+      { id: 33, name: 'Lassi', price: 80 },
+      { id: 34, name: 'Cold Coffee', price: 120 },
+      { id: 35, name: 'Tea', price: 20 },
+      { id: 36, name: 'Coffee', price: 30 },
+      { id: 37, name: 'Lemon Soda', price: 60 },
+      { id: 38, name: 'Buttermilk', price: 40 },
     ],
   };
 
@@ -71,37 +84,23 @@ const RestaurantVendorUI = () => {
     }
   };
 
-  const updateQuantity = (id, delta) => {
-    setCart(
-      cart
-        .map((item) =>
-          item.id === id
-            ? { ...item, quantity: item.quantity + delta }
-            : item
-        )
-        .filter((item) => item.quantity > 0)
-    );
-  };
-
-  const removeFromCart = (id) => {
-    setCart(cart.filter((item) => item.id !== id));
+  const decreaseItem = (item) => {
+    const found = cart.find((c) => c.id === item.id);
+    if (!found) return;
+    if (found.quantity === 1) {
+      setCart(cart.filter((c) => c.id !== item.id));
+    } else {
+      setCart(cart.map((c) =>
+        c.id === item.id ? { ...c, quantity: c.quantity - 1 } : c
+      ));
+    }
   };
 
   const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
   const placeOrder = () => {
     if (!cart.length) return;
-
-    setOrders([
-      ...orders,
-      {
-        id: Date.now(),
-        token: selectedToken,
-        items: cart,
-        total,
-      },
-    ]);
-
+    setOrders([...orders, { id: Date.now(), token: selectedToken, items: cart, total }]);
     setCart([]);
     setCartOpen(false);
   };
@@ -117,40 +116,35 @@ const RestaurantVendorUI = () => {
     );
   };
 
+  const getQty = (id) => cart.find((c) => c.id === id)?.quantity || 0;
+
   return (
     <div className="min-h-screen bg-stone-50 p-6">
-      <div className="max-w-[1600px] mx-auto">
-        <div className="flex justify-between items-center border-b-2 pb-4 mb-6">
+      <div className="max-w-[1800px] mx-auto">
+        <div className="flex justify-between items-center border-b pb-4 mb-6">
           <div>
             <h1 className="text-3xl font-serif">Culinary</h1>
-            <p className="text-xs tracking-widest text-stone-500">
-              Vendor Order System
-            </p>
+            <p className="text-xs text-stone-500">Vendor Order System</p>
           </div>
           <ChefHat size={32} />
         </div>
 
         {Object.entries(menu).map(([category, items]) => (
-          <div key={category} className="mb-10">
-            <h2 className="text-xl font-serif mb-3">{category}</h2>
+          <div key={category} className="mb-8">
+            <h2 className="text-lg font-serif mb-2">{category}</h2>
 
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3">
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9 gap-2">
               {items.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => addToCart(item)}
-                  className="border p-2 bg-white cursor-pointer hover:border-stone-900"
-                >
-                  <div className="aspect-square bg-stone-100 mb-2" />
-                  <h3 className="text-xs font-medium truncate">{item.name}</h3>
-                  <p className="text-[10px] text-stone-500 truncate">{item.desc}</p>
-                  <div className="flex justify-between items-center mt-1">
-                    <span className="text-xs">₹{item.price}</span>
-                    {cart.find((c) => c.id === item.id) && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {cart.find((c) => c.id === item.id).quantity}
-                      </Badge>
-                    )}
+                <div key={item.id} className="border bg-white p-2 text-xs flex flex-col gap-1">
+                  <div className="aspect-square bg-stone-100" />
+                  <div className="truncate font-medium">{item.name}</div>
+                  <div className="flex justify-between items-center">
+                    <span>₹{item.price}</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => decreaseItem(item)} className="border px-1">−</button>
+                      <span>{getQty(item.id)}</span>
+                      <button onClick={() => addToCart(item)} className="border px-1">+</button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -158,40 +152,26 @@ const RestaurantVendorUI = () => {
           </div>
         ))}
 
-        {/* Active Orders — minimalistic */}
+        {/* Active Orders */}
         {orders.length > 0 && (
-          <div className="mt-10 border-t pt-6">
-            <h2 className="text-lg font-serif mb-4">Active Orders</h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {orders.map((order) => (
-                <div
-                  key={order.id}
-                  className="border p-3 bg-white flex flex-col gap-2"
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium text-sm">
-                      Token {order.token}
-                    </span>
-                    <Check
-                      size={16}
-                      className="cursor-pointer hover:opacity-60"
-                      onClick={() => completeOrder(order.id)}
-                    />
+          <div className="mt-10 border-t pt-4">
+            <h2 className="text-lg font-serif mb-3">Active Orders</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {orders.map((o) => (
+                <div key={o.id} className="border p-2 text-xs bg-white">
+                  <div className="flex justify-between mb-1">
+                    <span>Token {o.token}</span>
+                    <Check size={14} className="cursor-pointer" onClick={() => completeOrder(o.id)} />
                   </div>
-
-                  <div className="text-xs text-stone-600 space-y-1">
-                    {order.items.map((i) => (
-                      <div key={i.id} className="flex justify-between">
-                        <span>{i.name} × {i.quantity}</span>
-                        <span>₹{i.price * i.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="border-t pt-1 text-xs flex justify-between font-medium">
+                  {o.items.map((i) => (
+                    <div key={i.id} className="flex justify-between text-stone-600">
+                      <span>{i.name} × {i.quantity}</span>
+                      <span>₹{i.price * i.quantity}</span>
+                    </div>
+                  ))}
+                  <div className="border-t mt-1 pt-1 flex justify-between font-medium">
                     <span>Total</span>
-                    <span>₹{order.total}</span>
+                    <span>₹{o.total}</span>
                   </div>
                 </div>
               ))}
@@ -203,70 +183,48 @@ const RestaurantVendorUI = () => {
       {/* Floating Cart Button */}
       <div
         onClick={() => setCartOpen(true)}
-        className="fixed bottom-6 right-6 bg-black text-white px-4 py-2 rounded-full flex items-center gap-2 cursor-pointer shadow-lg"
+        className="fixed bottom-6 right-6 bg-black text-white px-4 py-2 rounded-full flex gap-2 cursor-pointer"
       >
-        <ShoppingCart size={16} />
-        {cart.length} items
+        <ShoppingCart size={16} /> {cart.length}
       </div>
 
       {/* Drawer */}
       {cartOpen && (
         <div className="fixed inset-0 bg-black/40 flex justify-end z-50">
           <div className="bg-white w-full sm:w-[400px] h-full p-4 flex flex-col">
-            <div className="flex justify-between mb-4">
-              <h2 className="text-lg font-serif">Current Order</h2>
+            <div className="flex justify-between mb-3">
+              <h2 className="font-serif">Current Order</h2>
               <X onClick={() => setCartOpen(false)} className="cursor-pointer" />
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3">
+            <div className="flex-1 overflow-y-auto text-sm space-y-2">
               {cart.map((item) => (
                 <div key={item.id} className="border p-2">
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between">
                     {item.name}
-                    <Trash2
-                      size={14}
-                      onClick={() => removeFromCart(item.id)}
-                      className="cursor-pointer"
-                    />
+                    <Trash2 size={14} className="cursor-pointer" onClick={() => decreaseItem(item)} />
                   </div>
-                  <div className="flex justify-between items-center mt-2">
-                    <div className="flex gap-2 items-center">
-                      <Button size="icon" onClick={() => updateQuantity(item.id, -1)}>
-                        <Minus size={12} />
-                      </Button>
-                      {item.quantity}
-                      <Button size="icon" onClick={() => updateQuantity(item.id, 1)}>
-                        <Plus size={12} />
-                      </Button>
-                    </div>
-                    ₹{item.price * item.quantity}
-                  </div>
+                  Qty: {item.quantity} — ₹{item.price * item.quantity}
                 </div>
               ))}
             </div>
 
-            <div className="border-t pt-3 space-y-3">
-              <div className="flex justify-between font-medium">
+            <div className="border-t pt-3 space-y-2">
+              <div className="flex justify-between">
                 <span>Total</span>
                 <span>₹{total}</span>
               </div>
 
               <Select value={selectedToken} onValueChange={setSelectedToken}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Token" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Token" /></SelectTrigger>
                 <SelectContent>
                   {availableTokens().map((t) => (
-                    <SelectItem key={t} value={t}>
-                      Token {t}
-                    </SelectItem>
+                    <SelectItem key={t} value={t}>Token {t}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
 
-              <Button className="w-full" onClick={placeOrder}>
-                Place Order
-              </Button>
+              <Button onClick={placeOrder}>Place Order</Button>
             </div>
           </div>
         </div>
