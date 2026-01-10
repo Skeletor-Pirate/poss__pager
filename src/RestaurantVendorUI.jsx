@@ -106,6 +106,10 @@ const RestaurantVendorUI = () => {
     setCartOpen(false);
   };
 
+  const completeOrder = (id) => {
+    setOrders(orders.filter((o) => o.id !== id));
+  };
+
   const availableTokens = () => {
     const used = orders.map((o) => o.token);
     return Array.from({ length: 20 }, (_, i) => `${i + 1}`).filter(
@@ -153,6 +157,47 @@ const RestaurantVendorUI = () => {
             </div>
           </div>
         ))}
+
+        {/* Active Orders — minimalistic */}
+        {orders.length > 0 && (
+          <div className="mt-10 border-t pt-6">
+            <h2 className="text-lg font-serif mb-4">Active Orders</h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {orders.map((order) => (
+                <div
+                  key={order.id}
+                  className="border p-3 bg-white flex flex-col gap-2"
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-sm">
+                      Token {order.token}
+                    </span>
+                    <Check
+                      size={16}
+                      className="cursor-pointer hover:opacity-60"
+                      onClick={() => completeOrder(order.id)}
+                    />
+                  </div>
+
+                  <div className="text-xs text-stone-600 space-y-1">
+                    {order.items.map((i) => (
+                      <div key={i.id} className="flex justify-between">
+                        <span>{i.name} × {i.quantity}</span>
+                        <span>₹{i.price * i.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="border-t pt-1 text-xs flex justify-between font-medium">
+                    <span>Total</span>
+                    <span>₹{order.total}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Floating Cart Button */}
@@ -178,7 +223,11 @@ const RestaurantVendorUI = () => {
                 <div key={item.id} className="border p-2">
                   <div className="flex justify-between text-sm">
                     {item.name}
-                    <Trash2 size={14} onClick={() => removeFromCart(item.id)} className="cursor-pointer" />
+                    <Trash2
+                      size={14}
+                      onClick={() => removeFromCart(item.id)}
+                      className="cursor-pointer"
+                    />
                   </div>
                   <div className="flex justify-between items-center mt-2">
                     <div className="flex gap-2 items-center">
