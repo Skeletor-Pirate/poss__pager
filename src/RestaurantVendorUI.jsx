@@ -125,9 +125,11 @@ const RestaurantVendorUI = () => {
                   <div className="w-14 h-14 bg-stone-100 rounded-lg flex-shrink-0" />
 
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium leading-snug line-clamp-2">
-                      {item.name}
-                    </div>
+                  <div className="text-sm font-medium leading-snug min-w-0">
+                    {item.name}
+                  </div>
+
+
                   </div>
 
                   <div className="flex flex-col items-end gap-1">
@@ -249,3 +251,5 @@ const RestaurantVendorUI = () => {
 };
 
 export default RestaurantVendorUI;
+
+
