@@ -1,39 +1,159 @@
-import React, { useState } from 'react';
-import {
-  ShoppingCart,
-  Plus,
-  Minus,
-  Trash2,
-  Check,
-  ChefHat,
-  X,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import React, { useState } from "react";
+import { Plus, Minus, ShoppingCart, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-const RestaurantVendorUI = () => {
-  const [cart, setCart] = useState([]);
-  const [selectedToken, setSelectedToken] = useState('1');
-  const [orders, setOrders] = useState([]);
-  const [cartOpen, setCartOpen] = useState(false);
+const MENU = [
+  {
+    id: 1,
+    name: "Paneer Butter Masala with Garlic Naan",
+    price: 220,
+    img: "https://images.unsplash.com/photo-1601050690597-df0568f70950",
+  },
+  {
+    id: 2,
+    name: "Chicken Biryani Dum Style",
+    price: 260,
+    img: "https://images.unsplash.com/photo-1600628422019-37c6b8a03e7f",
+  },
+  {
+    id: 3,
+    name: "Veg Hakka Noodles Extra Spicy",
+    price: 180,
+    img: "https://images.unsplash.com/photo-1605478373056-58c3aee7c8a0",
+  },
+  {
+    id: 4,
+    name: "Masala Dosa with Coconut Chutney",
+    price: 140,
+    img: "https://images.unsplash.com/photo-1600628422019-37c6b8a03e7f",
+  },
+];
 
-  const menu = {
-    Starters: [
-      { id: 1, name: 'Paneer Tikka', price: 180 },
-      { id: 2, name: 'Spring Rolls', price: 120 },
-      { id: 3, name: 'Chicken Wings', price: 220 },
-      { id: 4, name: 'Veg Cutlet', price: 90 },
-      { id: 5, name: 'French Fries', price: 80 },
-      { id: 6, name: 'Cheese Balls', price: 140 },
-      { id: 7, name: 'Nachos', price: 160 },
-      { id: 8, name: 'Samosa', price: 30 },
-      { id: 9, name: 'Chilli Paneer', price: 190 },
+export default function RestaurantVendorUI() {
+  const [cart, setCart] = useState({});
+  const [open, setOpen] = useState(false);
+
+  const addItem = (item) => {
+    setCart((p) => ({ ...p, [item.id]: (p[item.id] || 0) + 1 }));
+  };
+
+  const removeItem = (item) => {
+    setCart((p) => {
+      if (!p[item.id]) return p;
+      const u = { ...p };
+      u[item.id]--;
+      if (!u[item.id]) delete u[item.id];
+      return u;
+    });
+  };
+
+  const qty = (id) => cart[id] || 0;
+  const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="min-h-screen bg-[#f4f6fb] p-6 font-sans">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-3xl font-semibold tracking-tight">Culinary</h1>
+        <p className="text-sm text-gray-500">Vendor Order System</p>
+      </div>
+
+      {/* Menu Cards */}
+      <div className="grid gap-3">
+        {MENU.map((item) => (
+          <div
+            key={item.id}
+            className="
+              bg-white
+              rounded-xl
+              border
+              border-gray-200
+              px-3 py-2
+              flex items-center gap-3
+              hover:shadow-sm
+              transition
+            "
+          >
+            {/* Thumbnail Image */}
+            <img
+              src={item.img}
+              alt={item.name}
+              className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
+            />
+
+            {/* RIGHT CONTENT */}
+            <div className="flex flex-col flex-1 items-end gap-1">
+              <div className="text-sm font-medium text-gray-900 text-right leading-snug">
+                {item.name}
+              </div>
+
+              <span className="text-sm font-semibold text-gray-900">
+                ₹{item.price}
+              </span>
+
+              <div className="flex items-center bg-gray-100 rounded-full px-3 py-1 gap-3">
+                <button onClick={() => removeItem(item)}>
+                  <Minus size={14} />
+                </button>
+
+                <span className="text-xs w-4 text-center">{qty(item.id)}</span>
+
+                <button onClick={() => addItem(item)}>
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Floating Cart */}
+      {totalItems > 0 && (
+        <button
+          onClick={() => setOpen(true)}
+          className="
+            fixed bottom-6 right-6
+            bg-gray-900 text-white
+            px-5 py-3
+            rounded-full
+            shadow-lg
+            flex items-center gap-2
+          "
+        >
+          <ShoppingCart size={18} />
+          {totalItems}
+        </button>
+      )}
+
+      {/* Cart Drawer */}
+      {open && (
+        <div className="fixed inset-0 bg-black/30 flex justify-end">
+          <div className="bg-white w-full sm:w-[380px] h-full p-5 flex flex-col">
+            <div className="flex justify-between mb-4">
+              <h2 className="font-semibold text-lg">Cart</h2>
+              <button onClick={() => setOpen(false)}>
+                <X />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-3 text-sm">
+              {MENU.filter((i) => cart[i.id]).map((item) => (
+                <div key={item.id} className="flex justify-between">
+                  <span>{item.name}</span>
+                  <span>
+                    {cart[item.id]} × ₹{item.price}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <Button className="mt-4 w-full">Place Order</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
     ],
     'Main Course': [
       { id: 10, name: 'Butter Chicken', price: 280 },
