@@ -21,15 +21,13 @@ import {
   ArrowLeft,
   Calendar as CalendarIcon,
   ChevronRight,
-  TrendingUp
+  TrendingUp,
+  Receipt
 } from 'lucide-react';
 
 // --- HELPER: Get Local Date String (YYYY-MM-DD) ---
 const getLocalDate = () => {
-  const now = new Date();
-  const offset = now.getTimezoneOffset() * 60000;
-  const localDate = new Date(now.getTime() - offset);
-  return localDate.toISOString().split('T')[0];
+  return new Date().toLocaleDateString('en-CA');
 };
 
 // --- Sub-component to isolate timer re-renders ---
@@ -73,6 +71,7 @@ export default function RestaurantVendorUI() {
   const [selectedToken, setSelectedToken] = useState('');
   const [discount, setDiscount] = useState(0); 
   const taxRate = 5; 
+  const transactionFeeRate = 0.02; // 2% Fee
 
   // Panel States
   const [ordersOpen, setOrdersOpen] = useState(false);
@@ -84,6 +83,13 @@ export default function RestaurantVendorUI() {
   // Checkout States
   const [paymentMode, setPaymentMode] = useState('CASH'); 
   const [cashReceived, setCashReceived] = useState('');
+
+  // UPI Config
+  const upiConfig = {
+    pa: 'mridulbhardwaj13@okaxis', 
+    pn: 'Grid Sphere',             
+    cu: 'INR',                     
+  };
 
   const [selectedCategory, setSelectedCategory] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -97,6 +103,7 @@ export default function RestaurantVendorUI() {
   const releaseBtnRef = useRef(null);
   const cashInputRef = useRef(null);
   const discountInputRef = useRef(null);
+  const dateInputRef = useRef(null);
 
   // --- DATA ---
   const menu = {
@@ -153,7 +160,6 @@ export default function RestaurantVendorUI() {
     tokenRefs.current = tokenRefs.current.slice(0, orders.length);
   }, [orders]);
 
-  // Focus Management
   useEffect(() => {
     if (viewOrder) setTimeout(() => releaseBtnRef.current?.focus(), 50);
   }, [viewOrder]);
@@ -172,7 +178,6 @@ export default function RestaurantVendorUI() {
   // Global Shortcuts
   useEffect(() => {
     const h = (e) => {
-      // Escape Logic Priority
       if (e.key === 'Escape') {
         if (showCheckout) setShowCheckout(false);
         else if (viewOrder) setViewOrder(null);
@@ -181,8 +186,6 @@ export default function RestaurantVendorUI() {
         else if (ordersOpen) setOrdersOpen(false);
         else if (currentView === 'REPORT') setCurrentView('POS'); 
       }
-
-      // POS Shortcuts
       if (currentView === 'POS' && !showCheckout && !viewOrder && !mobileCartOpen) {
         if (e.ctrlKey && e.key.toLowerCase() === 'o') {
           e.preventDefault();
@@ -193,8 +196,6 @@ export default function RestaurantVendorUI() {
           searchRef.current?.focus();
         }
       }
-
-      // Global Theme Toggle
       if (e.ctrlKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         setIsDarkMode(p => !p);
@@ -222,7 +223,28 @@ export default function RestaurantVendorUI() {
   
   const cartSubtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const taxAmount = Math.round((cartSubtotal * taxRate) / 100);
+  
+  const maxAllowableDiscount = cartSubtotal + taxAmount;
+  
+  useEffect(() => {
+    if (discount > maxAllowableDiscount) {
+        setDiscount(maxAllowableDiscount);
+    }
+  }, [maxAllowableDiscount, discount]);
+
   const grandTotal = Math.max(0, cartSubtotal + taxAmount - discount);
+
+  const processingFee = (paymentMode === 'UPI' || paymentMode === 'CARD') ? Math.round(grandTotal * transactionFeeRate) : 0;
+  const customerPayable = grandTotal + processingFee;
+
+  // --- HELPER: Generate UPI QR Link ---
+  const getUPIQR = () => {
+    const nextId = String(nextIdCounter).padStart(3, '0');
+    const tempTr = `ORD${nextId}-${Date.now()}`; 
+    const tempTn = `Order #${nextId}`;
+    const upiString = `upi://pay?pa=${upiConfig.pa}&pn=${encodeURIComponent(upiConfig.pn)}&am=${customerPayable}&cu=${upiConfig.cu}&tn=${encodeURIComponent(tempTn)}&tr=${tempTr}`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiString)}`;
+  };
 
   // --- ACTIONS ---
   const addToCart = (item) => {
@@ -246,6 +268,7 @@ export default function RestaurantVendorUI() {
 
   const initiateCheckout = () => {
     if (!cart.length || !selectedToken) return;
+    setPaymentMode('CASH'); 
     setShowCheckout(true);
   };
 
@@ -267,14 +290,16 @@ export default function RestaurantVendorUI() {
         subtotal: cartSubtotal,
         tax: taxAmount,
         discount: discount,
-        total: grandTotal
+        total: grandTotal,          
+        processingFee: processingFee, 
+        finalPayable: customerPayable 
       },
-      total: grandTotal,
+      total: grandTotal, 
       startedAt: Date.now(),
       payment: {
         method: paymentMode,
-        received: paymentMode === 'CASH' ? Number(cashReceived) : grandTotal,
-        change: paymentMode === 'CASH' ? Number(cashReceived) - grandTotal : 0
+        received: paymentMode === 'CASH' ? Number(cashReceived) : customerPayable,
+        change: paymentMode === 'CASH' ? Number(cashReceived) - customerPayable : 0
       }
     };
 
@@ -294,14 +319,15 @@ export default function RestaurantVendorUI() {
     }
   };
 
+  // --- EXPORT AS CSV (REVERTED) ---
   const exportData = (dataToExport) => {
     const data = dataToExport || [...history, ...orders]; 
     if (data.length === 0) {
-        alert("No sales data to export for this selection.");
+        alert("No sales data to export.");
         return;
     }
 
-    const headers = ["Order ID", "Date", "Time", "Token", "Items", "Subtotal", "Tax", "Discount", "Total", "Payment Mode", "Status"];
+    const headers = ["Order ID", "Date", "Time", "Token", "Items", "MRP (Subtotal)", "Discount", "GST", "Proc. Fee", "Grand Total (Paid)", "Payment Mode", "Status"];
     const rows = data.map(o => {
         const dateObj = new Date(o.startedAt);
         const date = dateObj.toLocaleDateString();
@@ -316,9 +342,10 @@ export default function RestaurantVendorUI() {
             o.token,
             `"${itemsStr}"`, 
             o.financials?.subtotal || 0,
-            o.financials?.tax || 0,
             o.financials?.discount || 0,
-            o.total,
+            o.financials?.tax || 0,
+            o.financials?.processingFee || 0,
+            o.financials?.finalPayable || o.total,
             o.payment?.method || 'N/A',
             status
         ].join(",");
@@ -347,55 +374,14 @@ export default function RestaurantVendorUI() {
     accentText: 'text-white'
   };
 
-  // --- POS KEYBOARD HANDLERS ---
-  const handleSearchKeyDown = (e) => {
-    if(showCheckout || mobileCartOpen) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (orders.length > 0) tokenRefs.current[0]?.focus();
-      else categoryRefs.current[0]?.focus();
-    }
-  };
-  const handleTokenKeyDown = (e, index, order) => {
-    if(showCheckout || mobileCartOpen) return;
-    if (e.key === 'ArrowRight') { e.preventDefault(); tokenRefs.current[(index + 1) % orders.length]?.focus(); } 
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); tokenRefs.current[(index - 1 + orders.length) % orders.length]?.focus(); } 
-    else if (e.key === 'ArrowDown') { e.preventDefault(); categoryRefs.current[0]?.focus(); } 
-    else if (e.key === 'ArrowUp') { e.preventDefault(); searchRef.current?.focus(); } 
-    else if (e.key === 'Enter') { e.preventDefault(); setViewOrder(order); }
-  };
-  const handleCategoryKeyDown = (e, index) => {
-    if(showCheckout || mobileCartOpen) return;
-    if (e.key === 'Tab') { e.preventDefault(); itemRefs.current[0]?.focus(); return; }
-    if (e.key === 'ArrowRight') { e.preventDefault(); const next = (index + 1) % categories.length; setSelectedCategory(categories[next]); categoryRefs.current[next]?.focus(); } 
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); const prev = (index - 1 + categories.length) % categories.length; setSelectedCategory(categories[prev]); categoryRefs.current[prev]?.focus(); } 
-    else if (e.key === 'ArrowDown') { e.preventDefault(); itemRefs.current[0]?.focus(); } 
-    else if (e.key === 'ArrowUp') { e.preventDefault(); if (orders.length > 0) tokenRefs.current[0]?.focus(); else searchRef.current?.focus(); }
-  };
+  // --- KEYBOARD HANDLERS ---
+  const handleSearchKeyDown = (e) => { if(showCheckout || mobileCartOpen) return; if (e.key === 'ArrowDown') { e.preventDefault(); if (orders.length > 0) tokenRefs.current[0]?.focus(); else categoryRefs.current[0]?.focus(); } };
+  const handleTokenKeyDown = (e, index, order) => { if(showCheckout || mobileCartOpen) return; if (e.key === 'ArrowRight') { e.preventDefault(); tokenRefs.current[(index + 1) % orders.length]?.focus(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); tokenRefs.current[(index - 1 + orders.length) % orders.length]?.focus(); } else if (e.key === 'ArrowDown') { e.preventDefault(); categoryRefs.current[0]?.focus(); } else if (e.key === 'ArrowUp') { e.preventDefault(); searchRef.current?.focus(); } else if (e.key === 'Enter') { e.preventDefault(); setViewOrder(order); } };
+  const handleCategoryKeyDown = (e, index) => { if(showCheckout || mobileCartOpen) return; if (e.key === 'Tab') { e.preventDefault(); itemRefs.current[0]?.focus(); return; } if (e.key === 'ArrowRight') { e.preventDefault(); const next = (index + 1) % categories.length; setSelectedCategory(categories[next]); categoryRefs.current[next]?.focus(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); const prev = (index - 1 + categories.length) % categories.length; setSelectedCategory(categories[prev]); categoryRefs.current[prev]?.focus(); } else if (e.key === 'ArrowDown') { e.preventDefault(); itemRefs.current[0]?.focus(); } else if (e.key === 'ArrowUp') { e.preventDefault(); if (orders.length > 0) tokenRefs.current[0]?.focus(); else searchRef.current?.focus(); } };
   const filteredItems = menu[selectedCategory]?.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  const handleMenuItemKeyDown = (e, index, item) => {
-    if(showCheckout || mobileCartOpen) return;
-    const totalItems = filteredItems.length;
-    const gridCols = window.innerWidth >= 1280 ? 4 : window.innerWidth >= 1024 ? 3 : window.innerWidth >= 640 ? 2 : 1;
-    if (e.key === 'Tab') { e.preventDefault(); const nextIndex = index + gridCols; if (nextIndex < totalItems) itemRefs.current[nextIndex]?.focus(); else confirmButtonRef.current?.focus(); return; }
-    if (e.key === 'ArrowRight') { e.preventDefault(); itemRefs.current[(index + 1) % totalItems]?.focus(); } 
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); itemRefs.current[(index - 1 + totalItems) % totalItems]?.focus(); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); const nextIndex = index + gridCols; if (nextIndex >= totalItems) confirmButtonRef.current?.focus(); else itemRefs.current[nextIndex]?.focus(); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); if (index < gridCols) { const catIndex = categories.indexOf(selectedCategory); categoryRefs.current[catIndex]?.focus(); } else { itemRefs.current[Math.max(index - gridCols, 0)]?.focus(); } }
-    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); addToCart(item); }
-    else if (e.key === 'Backspace') { e.preventDefault(); dec(item); }
-  };
-  const handleConfirmButtonKeyDown = (e) => {
-    if(showCheckout || mobileCartOpen) return;
-    if (e.key === 'Tab') { e.preventDefault(); if (orders.length > 0) tokenRefs.current[0]?.focus(); else { setSelectedCategory(categories[0]); categoryRefs.current[0]?.focus(); } }
-    if (e.key === 'ArrowUp') { e.preventDefault(); if (filteredItems.length > 0) itemRefs.current[filteredItems.length - 1]?.focus(); else { const catIndex = categories.indexOf(selectedCategory); categoryRefs.current[catIndex]?.focus(); } }
-  };
-  const handleCheckoutKeyDown = (e) => {
-    if (e.key === 'Escape') setShowCheckout(false);
-    if (e.key === 'ArrowRight') setPaymentMode(prev => prev === 'CASH' ? 'UPI' : prev === 'UPI' ? 'CARD' : 'CASH');
-    if (e.key === 'ArrowLeft') setPaymentMode(prev => prev === 'CASH' ? 'CARD' : prev === 'CARD' ? 'UPI' : 'CASH');
-    if (e.key === 'Enter') { if (paymentMode === 'CASH') { if (Number(cashReceived) >= grandTotal) finalizeOrder(); } else { finalizeOrder(); } }
-  };
+  const handleMenuItemKeyDown = (e, index, item) => { if(showCheckout || mobileCartOpen) return; const totalItems = filteredItems.length; const gridCols = window.innerWidth >= 1280 ? 4 : window.innerWidth >= 1024 ? 3 : window.innerWidth >= 640 ? 2 : 1; if (e.key === 'Tab') { e.preventDefault(); const nextIndex = index + gridCols; if (nextIndex < totalItems) itemRefs.current[nextIndex]?.focus(); else confirmButtonRef.current?.focus(); return; } if (e.key === 'ArrowRight') { e.preventDefault(); itemRefs.current[(index + 1) % totalItems]?.focus(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); itemRefs.current[(index - 1 + totalItems) % totalItems]?.focus(); } else if (e.key === 'ArrowDown') { e.preventDefault(); const nextIndex = index + gridCols; if (nextIndex >= totalItems) confirmButtonRef.current?.focus(); else itemRefs.current[nextIndex]?.focus(); } else if (e.key === 'ArrowUp') { e.preventDefault(); if (index < gridCols) { const catIndex = categories.indexOf(selectedCategory); categoryRefs.current[catIndex]?.focus(); } else { itemRefs.current[Math.max(index - gridCols, 0)]?.focus(); } } else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); addToCart(item); } else if (e.key === 'Backspace') { e.preventDefault(); dec(item); } };
+  const handleConfirmButtonKeyDown = (e) => { if(showCheckout || mobileCartOpen) return; if (e.key === 'Tab') { e.preventDefault(); if (orders.length > 0) tokenRefs.current[0]?.focus(); else { setSelectedCategory(categories[0]); categoryRefs.current[0]?.focus(); } } if (e.key === 'ArrowUp') { e.preventDefault(); if (filteredItems.length > 0) itemRefs.current[filteredItems.length - 1]?.focus(); else { const catIndex = categories.indexOf(selectedCategory); categoryRefs.current[catIndex]?.focus(); } } };
+  const handleCheckoutKeyDown = (e) => { if (e.key === 'Escape') setShowCheckout(false); if (e.key === 'ArrowRight') setPaymentMode(prev => prev === 'CASH' ? 'UPI' : prev === 'UPI' ? 'CARD' : 'CASH'); if (e.key === 'ArrowLeft') setPaymentMode(prev => prev === 'CASH' ? 'CARD' : prev === 'CARD' ? 'UPI' : 'CASH'); if (e.key === 'Enter') { if (paymentMode === 'CASH') { if (Number(cashReceived) >= customerPayable) finalizeOrder(); } else { finalizeOrder(); } } };
 
   // --- RENDER COMPONENT: REPORT DASHBOARD ---
   const SalesReport = () => {
@@ -407,26 +393,24 @@ export default function RestaurantVendorUI() {
       return localYMD === reportDate;
     }).sort((a, b) => b.startedAt - a.startedAt);
 
-    // --- CHART DATA GENERATION ---
     const chartData = useMemo(() => {
         const hours = Array(24).fill(0);
         filteredOrders.forEach(o => {
             const d = new Date(o.startedAt);
             const h = d.getHours();
-            hours[h] += Number(o.total || 0); // Ensure it treats as number
+            hours[h] += Number(o.total || 0); 
         });
         return hours;
     }, [filteredOrders]);
+    const maxSales = Math.max(...chartData, 1); 
 
-    const maxSales = Math.max(...chartData, 1); // Avoid div by zero
-
-    const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.total, 0);
+    const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.total, 0); 
+    const totalFees = filteredOrders.reduce((sum, o) => sum + (o.financials?.processingFee || 0), 0); 
     const totalCash = filteredOrders.filter(o => o.payment?.method === 'CASH').reduce((sum, o) => sum + o.total, 0);
     const totalUPI = filteredOrders.filter(o => o.payment?.method === 'UPI').reduce((sum, o) => sum + o.total, 0);
     const totalCard = filteredOrders.filter(o => o.payment?.method === 'CARD').reduce((sum, o) => sum + o.total, 0);
 
     const backBtnRef = useRef(null);
-    const dateInputRef = useRef(null);
     const exportBtnRef = useRef(null);
 
     useEffect(() => { setTimeout(() => backBtnRef.current?.focus(), 50); }, []);
@@ -434,15 +418,20 @@ export default function RestaurantVendorUI() {
     const handleReportNav = (e, type) => {
         if (e.key === 'Backspace') { setCurrentView('POS'); }
         if (type === 'BACK') { if (e.key === 'ArrowRight') dateInputRef.current?.focus(); }
-        if (type === 'DATE') { 
-            if (e.key === 'ArrowLeft') backBtnRef.current?.focus(); 
-            if (e.key === 'ArrowRight') exportBtnRef.current?.focus();
-        }
+        if (type === 'DATE') { if (e.key === 'ArrowLeft') backBtnRef.current?.focus(); if (e.key === 'ArrowRight') exportBtnRef.current?.focus(); }
         if (type === 'EXPORT') { if (e.key === 'ArrowLeft') dateInputRef.current?.focus(); }
     };
 
     return (
         <div className={`h-full flex flex-col p-4 md:p-6 overflow-hidden ${theme.bgMain} ${theme.textMain}`}>
+            {/* Custom Scrollbar Styles for Mobile */}
+            <style jsx global>{`
+              .custom-scrollbar::-webkit-scrollbar { height: 6px; }
+              .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+              .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 10px; }
+              .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #2563eb; }
+            `}</style>
+
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                 <div className="flex items-center gap-4">
                     <button ref={backBtnRef} onKeyDown={(e) => handleReportNav(e, 'BACK')} onClick={() => setCurrentView('POS')} className={`p-2 rounded-full ${theme.bgHover} border ${theme.border} outline-none focus:ring-2 focus:ring-blue-500`}>
@@ -454,27 +443,26 @@ export default function RestaurantVendorUI() {
                     </div>
                 </div>
                 <div className="flex gap-2 items-center w-full md:w-auto">
-                    <div className={`flex-1 md:flex-none flex items-center gap-2 px-3 py-2 rounded-lg border ${theme.border} ${theme.bgCard} focus-within:ring-2 focus-within:ring-blue-500`}>
+                    <div onClick={() => dateInputRef.current?.showPicker()} className={`flex-1 md:flex-none flex items-center gap-2 px-3 py-2 rounded-lg border ${theme.border} ${theme.bgCard} focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer`}>
                         <CalendarIcon size={18} className={theme.textSec} />
-                        <input ref={dateInputRef} type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} onKeyDown={(e) => handleReportNav(e, 'DATE')} className={`bg-transparent outline-none ${theme.textMain} text-sm font-medium w-full`}/>
+                        <input ref={dateInputRef} type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} onKeyDown={(e) => handleReportNav(e, 'DATE')} className={`bg-transparent outline-none ${theme.textMain} text-sm font-medium w-full cursor-pointer`}/>
                     </div>
                     <button ref={exportBtnRef} onKeyDown={(e) => handleReportNav(e, 'EXPORT')} onClick={() => exportData(filteredOrders)} className={`px-4 py-2 ${theme.bgCard} border ${theme.border} rounded-lg flex items-center gap-2 hover:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none whitespace-nowrap`}><Download size={18}/><span className="hidden md:inline">Export</span></button>
                 </div>
             </div>
 
-            {/* --- STATS GRID --- */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <div className={`${theme.bgCard} p-3 md:p-4 rounded-xl border ${theme.border} shadow-sm`}>
                     <div className={`${theme.textSec} text-xs md:text-sm`}>Total Revenue</div>
                     <div className="text-2xl md:text-3xl font-bold mt-1">₹{totalRevenue}</div>
                 </div>
                 <div className={`${theme.bgCard} p-3 md:p-4 rounded-xl border ${theme.border} shadow-sm`}>
-                    <div className={`${theme.textSec} text-xs md:text-sm`}>Total Orders</div>
-                    <div className="text-2xl md:text-3xl font-bold mt-1">{filteredOrders.length}</div>
+                    <div className={`${theme.textSec} text-xs md:text-sm`}>Fees Collected</div>
+                    <div className="text-2xl md:text-3xl font-bold mt-1 text-orange-500">+₹{totalFees}</div>
                 </div>
                 <div className={`${theme.bgCard} p-3 md:p-4 rounded-xl border ${theme.border} shadow-sm`}>
-                    <div className={`${theme.textSec} text-xs md:text-sm`}>Avg Order</div>
-                    <div className="text-2xl md:text-3xl font-bold mt-1">₹{filteredOrders.length ? Math.round(totalRevenue / filteredOrders.length) : 0}</div>
+                    <div className={`${theme.textSec} text-xs md:text-sm`}>Total Orders</div>
+                    <div className="text-2xl md:text-3xl font-bold mt-1">{filteredOrders.length}</div>
                 </div>
                 <div className={`${theme.bgCard} p-3 md:p-4 rounded-xl border ${theme.border} shadow-sm`}>
                     <div className={`${theme.textSec} text-xs md:text-sm`}>Cash / Digital</div>
@@ -485,30 +473,25 @@ export default function RestaurantVendorUI() {
                 </div>
             </div>
 
-            {/* --- HOURLY SALES CHART (FIXED) --- */}
             <div className={`mb-4 rounded-xl border ${theme.border} ${theme.bgCard} p-4`}>
                 <div className="flex items-center gap-2 mb-4">
                     <TrendingUp size={18} className="text-blue-500"/>
                     <h2 className="font-bold text-sm">Hourly Sales Performance</h2>
                 </div>
-                <div className="h-32 md:h-48 flex gap-1 md:gap-2"> {/* Removed items-end, keeping standard flex */}
-                    {chartData.map((val, h) => (
-                        <div key={h} className="flex-1 flex flex-col justify-end items-center gap-1 group relative h-full"> {/* justify-end pushes bars to bottom, h-full fills container */}
-                            {/* Tooltip */}
-                            <div className="absolute bottom-full mb-1 hidden group-hover:block bg-black text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-10">
-                                {h}:00 - ₹{val}
+                <div className="custom-scrollbar overflow-x-scroll pb-4 touch-auto">
+                    <div className="h-32 md:h-48 flex gap-2 min-w-[1000px] md:min-w-0 pt-8"> 
+                        {chartData.map((val, h) => (
+                            <div key={h} className="flex-1 flex flex-col justify-end items-center gap-1 group relative h-full cursor-pointer"> 
+                                {/* TOOLTIP: Shows Amount Only */}
+                                <div className="absolute bottom-full mb-2 hidden group-hover:flex group-active:flex flex-col items-center bg-slate-800 text-white text-xs p-2 rounded-lg shadow-xl z-50 pointer-events-none min-w-[60px] left-1/2 -translate-x-1/2">
+                                    <div className="font-bold text-sm">₹{val}</div>
+                                    <div className="w-2 h-2 bg-slate-800 rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2"></div>
+                                </div>
+                                <div className={`w-full rounded-t-sm transition-all duration-500 ${val > 0 ? 'bg-blue-500 group-hover:bg-blue-400' : 'bg-stone-100/10'}`} style={{height: `${(val / maxSales) * 100}%`, minHeight: val > 0 ? '4px' : '0'}}></div>
+                                <span className={`text-[9px] md:text-[10px] ${theme.textSec}`}>{h}</span>
                             </div>
-                            {/* Bar - Height is relative to the FULL chart height now */}
-                            <div 
-                                className={`w-full rounded-t-sm transition-all duration-500 ${val > 0 ? 'bg-blue-500 hover:bg-blue-400' : 'bg-transparent'}`} 
-                                style={{height: `${(val / maxSales) * 100}%`, minHeight: val > 0 ? '4px' : '0'}}
-                            ></div>
-                            {/* Label */}
-                            <span className={`text-[9px] md:text-[10px] ${theme.textSec} ${h % 3 !== 0 ? 'hidden md:block' : 'block'}`}>
-                                {h}
-                            </span>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             </div>
 
@@ -523,6 +506,10 @@ export default function RestaurantVendorUI() {
                                 <th className="p-3 font-medium">ID</th>
                                 <th className="p-3 font-medium hidden md:table-cell">Time</th>
                                 <th className="p-3 font-medium hidden md:table-cell">Items</th>
+                                <th className="p-3 font-medium text-stone-500">MRP</th>
+                                <th className="p-3 font-medium text-green-500">Disc</th>
+                                <th className="p-3 font-medium text-stone-500">GST</th>
+                                <th className="p-3 font-medium text-orange-500">Fee</th>
                                 <th className="p-3 font-medium">Total</th>
                                 <th className="p-3 font-medium text-right">Status</th>
                             </tr>
@@ -533,13 +520,17 @@ export default function RestaurantVendorUI() {
                                     <td className="p-3 font-mono font-bold">#{o.displayId}</td>
                                     <td className="p-3 hidden md:table-cell">{new Date(o.startedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
                                     <td className="p-3 truncate max-w-xs hidden md:table-cell">{o.items.map(i => i.name).join(", ")}</td>
-                                    <td className="p-3 font-bold">₹{o.total}</td>
+                                    <td className="p-3 text-stone-500">₹{o.financials?.subtotal || 0}</td>
+                                    <td className="p-3 text-green-500 text-xs font-bold">{o.financials?.discount > 0 ? `-₹${o.financials.discount}` : '-'}</td>
+                                    <td className="p-3 text-stone-500 text-xs">₹{o.financials?.tax || 0}</td>
+                                    <td className="p-3 text-orange-500 text-xs font-bold">{o.financials?.processingFee > 0 ? `+₹${o.financials.processingFee}` : '-'}</td>
+                                    <td className="p-3 font-bold">₹{o.financials?.finalPayable || o.total}</td>
                                     <td className="p-3 text-right">
                                         {orders.find(active => active.id === o.id) ? <span className="text-orange-500 text-xs font-bold bg-orange-100 px-2 py-1 rounded">ACT</span> : <span className="text-green-500 text-xs font-bold bg-green-100 px-2 py-1 rounded">DONE</span>}
                                     </td>
                                 </tr>
                             ))}
-                            {filteredOrders.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-stone-400">No transactions found for {reportDate}.</td></tr>}
+                            {filteredOrders.length === 0 && <tr><td colSpan="9" className="p-8 text-center text-stone-400">No transactions found for {reportDate}.</td></tr>}
                         </tbody>
                     </table>
                 </div>
@@ -553,18 +544,21 @@ export default function RestaurantVendorUI() {
   return (
     <div className={`h-screen flex flex-col md:flex-row overflow-hidden font-sans transition-colors duration-200 ${theme.bgMain} ${theme.textMain}`}>
       
-      {/* --- CHECKOUT MODAL (FULL SCREEN MOBILE) --- */}
+      {/* --- CHECKOUT MODAL --- */}
       {showCheckout && (
         <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center animate-in fade-in duration-200" onKeyDown={handleCheckoutKeyDown}>
             <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowCheckout(false)} />
             <div className={`relative ${theme.bgCard} w-full md:max-w-md h-[90vh] md:h-auto rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col`}>
                 <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-stone-900'} text-white p-6 flex justify-between items-center shrink-0`}>
                     <div>
-                        <div className="text-stone-400 text-sm font-medium uppercase tracking-wider">Total Payable</div>
-                        <div className="text-4xl font-bold">₹{grandTotal}</div>
+                        <div className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-1">Customer Pays</div>
+                        <div className="text-4xl font-bold">₹{customerPayable}</div>
+                        {processingFee > 0 && <div className="text-xs text-orange-300 mt-1">Includes ₹{processingFee} fee</div>}
                     </div>
                     <div className="text-right">
-                        <div className="bg-white/10 px-3 py-1 rounded-full text-sm font-mono">Token {selectedToken}</div>
+                        <div className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-1">You Receive</div>
+                        <div className="text-xl font-bold">₹{grandTotal}</div>
+                        <div className="bg-white/10 px-2 py-0.5 rounded text-xs font-mono mt-2 inline-block">Order #{String(nextIdCounter).padStart(3, '0')}</div>
                     </div>
                 </div>
                 <div className="p-6 space-y-6 overflow-y-auto flex-1">
@@ -584,39 +578,39 @@ export default function RestaurantVendorUI() {
                                 <label className="block text-xs font-bold text-stone-400 uppercase mb-1">Cash Received</label>
                                 <div className="relative">
                                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-bold text-stone-400">₹</span>
-                                    <input 
-                                        ref={cashInputRef} 
-                                        type="number" 
-                                        min="0"
-                                        value={cashReceived} 
-                                        onChange={(e) => {
-                                            if(Number(e.target.value) >= 0) setCashReceived(e.target.value);
-                                        }} 
-                                        className={`w-full pl-8 pr-4 py-3 text-2xl font-bold ${theme.bgCard} ${theme.textMain} ${theme.border} border rounded-xl focus:ring-4 focus:ring-blue-500 outline-none`} 
-                                        placeholder="0"
-                                    />
+                                    <input ref={cashInputRef} type="number" min="0" value={cashReceived} onChange={(e) => { if(Number(e.target.value) >= 0) setCashReceived(e.target.value); }} className={`w-full pl-8 pr-4 py-3 text-2xl font-bold ${theme.bgCard} ${theme.textMain} ${theme.border} border rounded-xl focus:ring-4 focus:ring-blue-500 outline-none`} placeholder="0"/>
                                 </div>
                             </div>
                             <div className={`flex justify-between items-center pt-2 border-t border-dashed ${theme.border}`}>
                                 <span className={theme.textSec}>Change</span>
-                                <span className={`text-2xl font-bold ${(Number(cashReceived) - grandTotal) < 0 ? 'text-stone-500' : 'text-green-500'}`}>₹{Math.max(0, Number(cashReceived) - grandTotal)}</span>
+                                <span className={`text-2xl font-bold ${(Number(cashReceived) - customerPayable) < 0 ? 'text-stone-500' : 'text-green-500'}`}>₹{Math.max(0, Number(cashReceived) - customerPayable)}</span>
                             </div>
                         </div>
                     ) : (
                         <div className="bg-blue-500/10 rounded-2xl p-6 border border-blue-500/20 flex flex-col items-center text-center gap-2">
-                             <CreditCard size={48} className="text-blue-400"/>
-                             <div className="text-blue-500 font-medium">Waiting for Payment...</div>
+                             {paymentMode === 'UPI' ? (
+                                <>
+                                    <div className="bg-white p-3 rounded-lg"><img src={getUPIQR()} alt="UPI QR" className="w-48 h-48 object-contain"/></div>
+                                    <div className="text-blue-500 font-medium text-sm mt-2">Scan to Pay ₹{customerPayable}</div>
+                                </>
+                             ) : (
+                                <>
+                                    <CreditCard size={48} className="text-blue-400"/>
+                                    <div className="text-blue-500 font-medium">Use Card Machine</div>
+                                    <div className="text-blue-400 text-xs">Charge ₹{customerPayable} on device</div>
+                                </>
+                             )}
                         </div>
                     )}
-                    <button onClick={finalizeOrder} disabled={paymentMode === 'CASH' && Number(cashReceived) < grandTotal} className={`w-full py-4 ${theme.accent} ${theme.accentText} rounded-xl font-bold text-lg hover:opacity-90 disabled:opacity-50 transition-all shadow-xl`}>
-                        {paymentMode === 'CASH' ? (Number(cashReceived) < grandTotal ? 'Enter Full Amount' : `Accept & Print Bill`) : 'Confirm Payment'}
+                    <button onClick={finalizeOrder} disabled={paymentMode === 'CASH' && Number(cashReceived) < customerPayable} className={`w-full py-4 ${theme.accent} ${theme.accentText} rounded-xl font-bold text-lg hover:opacity-90 disabled:opacity-50 transition-all shadow-xl`}>
+                        {paymentMode === 'CASH' ? (Number(cashReceived) < customerPayable ? 'Enter Full Amount' : `Accept Payment`) : 'Confirm Payment'}
                     </button>
                 </div>
             </div>
         </div>
       )}
 
-      {/* --- VIEW ORDER MODAL --- */}
+      {/* --- REST OF THE UI (View Order, Active Orders, Main Layout) IS SAME AS BEFORE --- */}
       {viewOrder && (
         <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center animate-in fade-in duration-200">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setViewOrder(null)} />
@@ -652,7 +646,6 @@ export default function RestaurantVendorUI() {
         </div>
       )}
 
-      {/* --- ACTIVE ORDERS SIDEBAR (MOBILE: FULL SCREEN) --- */}
       {ordersOpen && (
         <div className="fixed inset-0 z-50 flex justify-start animate-in fade-in duration-200">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOrdersOpen(false)} />
@@ -690,9 +683,7 @@ export default function RestaurantVendorUI() {
         </div>
       )}
 
-      {/* --- MAIN LAYOUT --- */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Header */}
         <div className={`${theme.bgCard} border-b ${theme.border} px-4 md:px-6 py-3 md:py-4 flex justify-between items-center gap-4 shadow-sm z-10 shrink-0`}>
           <div>
             <h1 className="text-lg md:text-xl font-bold">POS</h1>
@@ -709,7 +700,6 @@ export default function RestaurantVendorUI() {
           </div>
         </div>
 
-        {/* Token Strip */}
         {orders.length > 0 && (
           <div className={`${isDarkMode ? 'bg-slate-900/50' : 'bg-stone-50'} border-b ${theme.border} px-4 md:px-6 py-2 overflow-x-auto whitespace-nowrap scrollbar-hide shrink-0`}>
              <div className="flex gap-3 items-center">
@@ -723,7 +713,6 @@ export default function RestaurantVendorUI() {
           </div>
         )}
 
-        {/* Categories */}
         <div className={`${theme.bgCard} border-b ${theme.border} px-4 md:px-6 py-2 overflow-x-auto whitespace-nowrap shrink-0`}>
           <div className="flex gap-2">
             {categories.map((cat, i) => (
@@ -732,7 +721,6 @@ export default function RestaurantVendorUI() {
           </div>
         </div>
 
-        {/* Menu Grid */}
         <div className={`flex-1 overflow-y-auto p-4 md:p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-stone-50/50'}`}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 pb-24 md:pb-20">
             {filteredItems?.map((i, index) => (
@@ -758,36 +746,20 @@ export default function RestaurantVendorUI() {
           </div>
         </div>
 
-        {/* --- MOBILE BOTTOM CART BAR --- */}
         {cart.length > 0 && (
           <div className="md:hidden absolute bottom-4 left-4 right-4 z-40">
-            <button 
-              onClick={() => setMobileCartOpen(true)}
-              className={`w-full ${theme.accent} text-white p-4 rounded-2xl shadow-xl flex justify-between items-center`}
-            >
+            <button onClick={() => setMobileCartOpen(true)} className={`w-full ${theme.accent} text-white p-4 rounded-2xl shadow-xl flex justify-between items-center`}>
               <div className="flex items-center gap-3">
-                <div className="bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
-                  {cart.reduce((a, b) => a + b.quantity, 0)}
-                </div>
-                <div className="text-left">
-                  <div className="text-xs opacity-80">Total</div>
-                  <div className="font-bold">₹{cartSubtotal}</div>
-                </div>
+                <div className="bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">{cart.reduce((a, b) => a + b.quantity, 0)}</div>
+                <div className="text-left"><div className="text-xs opacity-80">Total</div><div className="font-bold">₹{cartSubtotal}</div></div>
               </div>
-              <div className="flex items-center gap-1 font-bold text-sm">
-                View Cart <ChevronRight size={16} />
-              </div>
+              <div className="flex items-center gap-1 font-bold text-sm">View Cart <ChevronRight size={16} /></div>
             </button>
           </div>
         )}
       </div>
 
-      {/* --- CART SIDEBAR (DESKTOP + MOBILE SLIDE-OVER) --- */}
-      {/* Background Overlay for Mobile */}
-      {mobileCartOpen && (
-        <div className="md:hidden fixed inset-0 bg-black/50 z-40 backdrop-blur-sm" onClick={() => setMobileCartOpen(false)} />
-      )}
-      
+      {mobileCartOpen && <div className="md:hidden fixed inset-0 bg-black/50 z-40 backdrop-blur-sm" onClick={() => setMobileCartOpen(false)} />}
       <div className={`fixed inset-y-0 right-0 w-[85%] md:w-[380px] ${theme.bgCard} border-l ${theme.border} h-full flex flex-col shadow-2xl z-50 transform transition-transform duration-300 ${mobileCartOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} md:static`}>
         <div className={`p-5 border-b ${theme.border} ${isDarkMode ? 'bg-slate-900' : 'bg-stone-50'} flex justify-between items-center`}>
           <h2 className="font-bold text-lg flex items-center gap-2"><ShoppingCart size={20} /> Current Order</h2>
@@ -815,28 +787,47 @@ export default function RestaurantVendorUI() {
             ))
           )}
         </div>
-        
         <div className={`p-4 ${isDarkMode ? 'bg-slate-900' : 'bg-stone-50'} border-t ${theme.border} space-y-3`}>
            <div className="space-y-1 text-sm">
              <div className={`flex justify-between ${theme.textSec}`}><span>Subtotal</span><span>₹{cartSubtotal}</span></div>
              <div className={`flex justify-between ${theme.textSec}`}><span>Tax (5%)</span><span>+₹{taxAmount}</span></div>
              <div className={`flex justify-between ${theme.textSec}`}><span>Discount</span><span className={discount > 0 ? 'text-green-500' : ''}>-₹{discount}</span></div>
            </div>
-
            <div className="flex items-center gap-2">
              {showDiscountInput ? (
                <div className="flex items-center gap-2 w-full animate-in fade-in">
                   <span className="text-xs font-bold text-stone-400">₹</span>
-                  <input ref={discountInputRef} type="number" value={discount || ''} onChange={e => setDiscount(Number(e.target.value))} className={`w-full p-2 text-sm rounded-lg ${theme.inputBg} ${theme.textMain} outline-none border ${theme.border}`} placeholder="Disc Amount"/>
+                  
+                  {/* --- UPDATED DISCOUNT INPUT --- */}
+                  {/* Added max attribute and logic to clamp value to total bill amount */}
+                  <input 
+                    ref={discountInputRef} 
+                    type="number" 
+                    min="0" 
+                    max={cartSubtotal + taxAmount} // Limits browser spinner
+                    value={discount || ''} 
+                    onChange={e => {
+                        const val = Number(e.target.value);
+                        const maxAllowed = cartSubtotal + taxAmount;
+                        // LOGIC: If value is valid (>=0) and within limit, set it. 
+                        // If it exceeds limit, cap it at maxAllowed.
+                        if (val >= 0 && val <= maxAllowed) {
+                            setDiscount(val);
+                        } else if (val > maxAllowed) {
+                            setDiscount(maxAllowed);
+                        }
+                    }} 
+                    className={`w-full p-2 text-sm rounded-lg ${theme.inputBg} ${theme.textMain} outline-none border ${theme.border}`} 
+                    placeholder="Disc Amount"
+                  />
+                  
                   <button onClick={() => setShowDiscountInput(false)} className="p-2 bg-stone-200 text-stone-600 rounded-lg"><Check size={14}/></button>
                </div>
              ) : (
                <button onClick={() => setShowDiscountInput(true)} className={`text-xs flex items-center gap-1 ${theme.textSec} hover:text-blue-500`}><Percent size={12}/> Add Discount</button>
              )}
            </div>
-
            <div className={`flex justify-between items-center text-xl font-bold ${theme.textMain} pt-2 border-t ${theme.border}`}><span>Total</span><span>₹{grandTotal}</span></div>
-
            <div className="space-y-2 pt-2">
              <select value={selectedToken} onChange={(e) => setSelectedToken(e.target.value)} className={`w-full p-2.5 rounded-lg border ${theme.border} ${theme.bgCard} ${theme.textMain} text-sm focus:ring-2 focus:ring-blue-500 outline-none`}>
               {availableTokens.length === 0 ? <option disabled>No Tokens</option> : <><option value="" disabled>Select Token</option>{availableTokens.map((t) => <option key={t} value={t}>Token {t}</option>)}</>}

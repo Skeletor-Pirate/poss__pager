@@ -1,5 +1,5 @@
 import React from 'react'
-import RestaurantVendorUI from './RestaurantVendorUI'
+import RestaurantVendorUI from './components/ui/RestaurantVendorUI.jsx'
 
 function App() {
   return (
