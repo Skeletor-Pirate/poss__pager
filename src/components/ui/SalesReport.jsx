@@ -45,22 +45,41 @@ export default function SalesReport({
   const totalUPI = filteredOrders.filter(o => o.payment?.method === 'UPI').reduce((sum, o) => sum + o.total, 0);
   const totalCard = filteredOrders.filter(o => o.payment?.method === 'CARD').reduce((sum, o) => sum + o.total, 0);
 
+  // --- CSV EXPORT FUNCTION (Restored) ---
   const exportData = () => {
     if (filteredOrders.length === 0) {
         alert("No sales data to export.");
         return;
     }
-    const dataToExport = filteredOrders.map(o => ({
-      ...o,
-      formattedDate: new Date(o.startedAt).toLocaleString()
-    }));
-    
-    const jsonContent = JSON.stringify(dataToExport, null, 2);
-    const blob = new Blob([jsonContent], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
+    const headers = ["Order ID", "Date", "Time", "Token", "Items", "MRP (Subtotal)", "Discount", "GST", "Proc. Fee", "Grand Total (Paid)", "Payment Mode", "Status"];
+    const rows = filteredOrders.map(o => {
+        const dateObj = new Date(o.startedAt);
+        const date = dateObj.toLocaleDateString();
+        const time = dateObj.toLocaleTimeString();
+        // Escape quotes in item names for CSV safety
+        const itemsStr = o.items.map(i => `${i.name} (x${i.quantity})`).join(" | ").replace(/"/g, '""');
+        const status = orders.find(active => active.id === o.id) ? "ACTIVE" : "COMPLETED";
+        
+        return [
+            o.displayId, 
+            date, 
+            time, 
+            o.token, 
+            `"${itemsStr}"`, 
+            o.financials?.subtotal || 0, 
+            o.financials?.discount || 0, 
+            o.financials?.tax || 0,
+            o.financials?.processingFee || 0, 
+            o.financials?.finalPayable || o.total,
+            o.payment?.method || 'N/A', 
+            status
+        ].join(",");
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
     const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Sales_Report_${reportDate}.json`);
+    link.setAttribute("href", encodeURI(csvContent));
+    link.setAttribute("download", `Sales_Report_${reportDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -92,7 +111,7 @@ export default function SalesReport({
                     <input ref={dateInputRef} type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className={`bg-transparent outline-none ${theme.textMain} text-sm font-medium w-full cursor-pointer`}/>
                 </div>
                 <button onClick={exportData} className={`px-4 py-2 ${theme.bgCard} border ${theme.border} rounded-lg flex items-center gap-2 hover:border-blue-500`}>
-                    <Download size={18}/><span className="hidden md:inline">Export JSON</span>
+                    <Download size={18}/><span className="hidden md:inline">Export CSV</span>
                 </button>
             </div>
         </div>
