@@ -1,183 +1,80 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
-  ShoppingCart,
-  Plus,
-  Minus,
-  Check,
-  ChefHat,
-  X,
-  Search,
-  Utensils,
-  Clock,
-  Hash,
-  Banknote,
-  CreditCard,
-  QrCode,
-  Moon,
-  Sun,
-  Percent,
-  Download,
-  BarChart3,
-  ArrowLeft,
-  Calendar as CalendarIcon,
-  ChevronRight,
-  TrendingUp,
-  Receipt
+  ShoppingCart, Plus, Minus, Check, ChefHat, X, Search,
+  Utensils, Clock, BarChart3, Sun, Moon, Percent, ChevronRight
 } from 'lucide-react';
 
-// --- HELPER: Get Local Date String (YYYY-MM-DD) ---
-const getLocalDate = () => {
-  return new Date().toLocaleDateString('en-CA');
-};
-
-// --- Sub-component to isolate timer re-renders ---
-const OrderTimer = ({ startedAt, large = false }) => {
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    const update = () => setElapsed(Math.floor((Date.now() - startedAt) / 1000));
-    update();
-    const i = setInterval(update, 1000);
-    return () => clearInterval(i);
-  }, [startedAt]);
-
-  const mins = Math.floor(elapsed / 60);
-  const secs = String(elapsed % 60).padStart(2, '0');
-  
-  const colorClass = mins > 15 ? 'text-red-500 font-bold' : mins > 10 ? 'text-orange-500' : 'text-stone-500';
-  const sizeClass = large ? 'text-2xl' : 'text-xs';
-
-  return <span className={`font-mono ${colorClass} ${sizeClass}`}>{mins}:{secs}</span>;
-};
+// SIBLING IMPORTS
+import { MENU_ITEMS, CATEGORIES } from './data';
+import OrderTimer from './OrderTimer';
+import CheckoutModal from './CheckoutModal';
+import SalesReport from './SalesReport';
+import POSView from './POSView';
+import ActiveOrdersDrawer from './ActiveOrdersDrawer';
+import OrderDetailsModal from './OrderDetailsModal';
 
 export default function RestaurantVendorUI() {
   // --- STATE ---
-  const [orders, setOrders] = useState(() => {
-    const saved = localStorage.getItem('vendor_orders');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [history, setHistory] = useState(() => {
-    const saved = localStorage.getItem('vendor_history');
-    return saved ? JSON.parse(saved) : [];
-  });
-  
+  const [orders, setOrders] = useState([]);
+  const [history, setHistory] = useState([]);
   const [nextIdCounter, setNextIdCounter] = useState(1);
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('pos_theme') === 'dark');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // View & UI State
   const [currentView, setCurrentView] = useState('POS'); 
-  const [reportDate, setReportDate] = useState(getLocalDate());
-
-  const [cart, setCart] = useState([]);
-  const [selectedToken, setSelectedToken] = useState('');
-  const [discount, setDiscount] = useState(0); 
-  const taxRate = 5; 
-  const transactionFeeRate = 0.02; // 2% Fee
-
-  // Panel States
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [viewOrder, setViewOrder] = useState(null);
   const [showCheckout, setShowCheckout] = useState(false);
-  const [showDiscountInput, setShowDiscountInput] = useState(false);
+  const [showDiscountInput, setShowDiscountInput] = useState(false); // Hoisted state if needed
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
-  // Checkout States
-  const [paymentMode, setPaymentMode] = useState('CASH'); 
-  const [cashReceived, setCashReceived] = useState('');
+  // Cart State
+  const [cart, setCart] = useState([]);
+  const [selectedToken, setSelectedToken] = useState('');
+  const [discount, setDiscount] = useState(0); 
+  
+  const taxRate = 5; 
+  const transactionFeeRate = 0.02;
 
-  // UPI Config
-  const upiConfig = {
-    pa: 'mridulbhardwaj13@okaxis', 
-    pn: 'Grid Sphere',             
-    cu: 'INR',                     
-  };
+  // Refs
+  const confirmButtonRef = useRef(null); // Used for focus management
 
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-
-  // --- REFS ---
-  const searchRef = useRef(null);
-  const categoryRefs = useRef([]);
-  const itemRefs = useRef([]);
-  const tokenRefs = useRef([]);
-  const confirmButtonRef = useRef(null);
-  const releaseBtnRef = useRef(null);
-  const cashInputRef = useRef(null);
-  const discountInputRef = useRef(null);
-  const dateInputRef = useRef(null);
-
-  // --- DATA ---
-  const menu = {
-    Starters: [
-      { id: 1, name: 'Paneer Tikka', price: 180, imageQuery: 'Paneer Tikka dish' },
-      { id: 2, name: 'Spring Rolls', price: 120 },
-      { id: 3, name: 'Chicken Wings', price: 220 },
-      { id: 4, name: 'French Fries', price: 80 },
-    ],
-    'Main Course': [
-      { id: 10, name: 'Butter Chicken', price: 280, imageQuery: 'Butter Chicken dish' },
-      { id: 11, name: 'Dal Makhani', price: 180 },
-      { id: 12, name: 'Paneer Butter Masala', price: 240 },
-      { id: 14, name: 'Chicken Biryani', price: 260 },
-      { id: 15, name: 'Naan', price: 40 },
-      { id: 16, name: 'Roti', price: 20 },
-    ],
-    Beverages: [
-      { id: 18, name: 'Cold Coffee', price: 120, imageQuery: 'Cold Coffee glass' },
-      { id: 19, name: 'Lassi', price: 80 },
-      { id: 20, name: 'Lemon Soda', price: 60 },
-    ],
-  };
-
-  const categories = Object.keys(menu);
-
-  // --- EFFECTS ---
+  // --- SAFE STORAGE LOADING ---
   useEffect(() => {
-    if (!selectedCategory) setSelectedCategory(categories[0]);
+    try {
+      const savedOrders = localStorage.getItem('vendor_orders');
+      const savedHistory = localStorage.getItem('vendor_history');
+      const savedTheme = localStorage.getItem('pos_theme');
+
+      if (savedOrders) setOrders(JSON.parse(savedOrders));
+      if (savedHistory) setHistory(JSON.parse(savedHistory));
+      if (savedTheme === 'dark') setIsDarkMode(true);
+      
+      const allIds = [...(JSON.parse(savedOrders || '[]')), ...(JSON.parse(savedHistory || '[]'))]
+        .map(o => parseInt(o.displayId || 0));
+      if (allIds.length > 0) setNextIdCounter(Math.max(...allIds) + 1);
+
+    } catch (e) {
+      console.error("Storage Error:", e);
+      localStorage.clear();
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('vendor_orders', JSON.stringify(orders));
-  }, [orders]);
-
-  useEffect(() => {
-    localStorage.setItem('vendor_history', JSON.stringify(history));
-  }, [history]);
-
+  // --- PERSISTENCE ---
+  useEffect(() => { if(!isLoading) localStorage.setItem('vendor_orders', JSON.stringify(orders)); }, [orders, isLoading]);
+  useEffect(() => { if(!isLoading) localStorage.setItem('vendor_history', JSON.stringify(history)); }, [history, isLoading]);
   useEffect(() => {
     localStorage.setItem('pos_theme', isDarkMode ? 'dark' : 'light');
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.toggle('dark', isDarkMode);
   }, [isDarkMode]);
 
-  useEffect(() => {
-    itemRefs.current = itemRefs.current.slice(0, menu[selectedCategory]?.length || 0);
-  }, [selectedCategory, menu]);
-  
-  useEffect(() => {
-    tokenRefs.current = tokenRefs.current.slice(0, orders.length);
-  }, [orders]);
-
-  useEffect(() => {
-    if (viewOrder) setTimeout(() => releaseBtnRef.current?.focus(), 50);
-  }, [viewOrder]);
-
-  useEffect(() => {
-    if (showCheckout) {
-      setTimeout(() => cashInputRef.current?.focus(), 50);
-      setCashReceived('');
-    }
-  }, [showCheckout]);
-
-  useEffect(() => {
-    if (showDiscountInput) setTimeout(() => discountInputRef.current?.focus(), 50);
-  }, [showDiscountInput]);
-
-  // Global Shortcuts
+  // --- GLOBAL KEYBOARD SHORTCUTS (FIXED) ---
   useEffect(() => {
     const h = (e) => {
+      // 1. Handling Esc key to close modals/views in priority order
       if (e.key === 'Escape') {
         if (showCheckout) setShowCheckout(false);
         else if (viewOrder) setViewOrder(null);
@@ -186,19 +83,24 @@ export default function RestaurantVendorUI() {
         else if (ordersOpen) setOrdersOpen(false);
         else if (currentView === 'REPORT') setCurrentView('POS'); 
       }
+
+      // 2. Global Shortcuts (Only active when no blocking modal is open)
       if (currentView === 'POS' && !showCheckout && !viewOrder && !mobileCartOpen) {
-        if (e.ctrlKey && e.key.toLowerCase() === 'o') {
-          e.preventDefault();
-          setOrdersOpen((p) => !p);
+        
+        // Ctrl+O : Toggle Active Orders Drawer
+        if (e.ctrlKey && e.key.toLowerCase() === 'o') { 
+           e.preventDefault(); 
+           setOrdersOpen(p => !p); 
         }
-        if (e.ctrlKey && e.key.toLowerCase() === 'f') {
-          e.preventDefault();
-          searchRef.current?.focus();
+        
+        // Ctrl+D : Toggle Dark Mode
+        if (e.ctrlKey && e.key.toLowerCase() === 'd') { 
+           e.preventDefault(); 
+           setIsDarkMode(p => !p); 
         }
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        setIsDarkMode(p => !p);
+        
+        // Ctrl+F : Focus Search (Handled in POSView, but good to have fallback here if needed)
+        // Note: We leave Ctrl+F primarily to POSView to focus the specific input ref
       }
     };
     window.addEventListener('keydown', h);
@@ -208,9 +110,7 @@ export default function RestaurantVendorUI() {
   // --- CALCULATIONS ---
   const availableTokens = useMemo(() => {
     const used = orders.map((o) => o.token);
-    return Array.from({ length: 20 }, (_, i) => `${i + 1}`).filter(
-      (t) => !used.includes(t)
-    );
+    return Array.from({ length: 20 }, (_, i) => `${i + 1}`).filter(t => !used.includes(t));
   }, [orders]);
 
   useEffect(() => {
@@ -219,67 +119,46 @@ export default function RestaurantVendorUI() {
     }
   }, [availableTokens, selectedToken]);
 
-  const qty = (id) => cart.find((c) => c.id === id)?.quantity || 0;
-  
   const cartSubtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const taxAmount = Math.round((cartSubtotal * taxRate) / 100);
+  const maxDiscount = cartSubtotal + taxAmount;
   
-  const maxAllowableDiscount = cartSubtotal + taxAmount;
-  
-  useEffect(() => {
-    if (discount > maxAllowableDiscount) {
-        setDiscount(maxAllowableDiscount);
-    }
-  }, [maxAllowableDiscount, discount]);
-
-  const grandTotal = Math.max(0, cartSubtotal + taxAmount - discount);
-
-  const processingFee = (paymentMode === 'UPI' || paymentMode === 'CARD') ? Math.round(grandTotal * transactionFeeRate) : 0;
-  const customerPayable = grandTotal + processingFee;
-
-  // --- HELPER: Generate UPI QR Link ---
-  const getUPIQR = () => {
-    const nextId = String(nextIdCounter).padStart(3, '0');
-    const tempTr = `ORD${nextId}-${Date.now()}`; 
-    const tempTn = `Order #${nextId}`;
-    const upiString = `upi://pay?pa=${upiConfig.pa}&pn=${encodeURIComponent(upiConfig.pn)}&am=${customerPayable}&cu=${upiConfig.cu}&tn=${encodeURIComponent(tempTn)}&tr=${tempTr}`;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiString)}`;
-  };
+  // Safety check for discount
+  useEffect(() => { if (discount > maxDiscount) setDiscount(maxDiscount); }, [maxDiscount, discount]);
+  const grandTotal = Math.max(0, maxDiscount - discount);
+  const estimatedFee = Math.round(grandTotal * transactionFeeRate);
 
   // --- ACTIONS ---
-  const addToCart = (item) => {
-    setCart((p) => {
-      const f = p.find((c) => c.id === item.id);
-      return f
-        ? p.map((c) => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c))
-        : [...p, { ...item, quantity: 1 }];
+  const handleAddToCart = (item) => {
+    setCart(p => {
+      const f = p.find(c => c.id === item.id);
+      return f ? p.map(c => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c)) : [...p, { ...item, quantity: 1 }];
     });
   };
 
-  const dec = (item) => {
-    setCart((p) => {
-      const f = p.find((c) => c.id === item.id);
+  const handleRemoveFromCart = (item) => {
+    setCart(p => {
+      const f = p.find(c => c.id === item.id);
       if (!f) return p;
-      return f.quantity === 1
-        ? p.filter((c) => c.id !== item.id)
-        : p.map((c) => (c.id === item.id ? { ...c, quantity: c.quantity - 1 } : c));
+      return f.quantity === 1 ? p.filter(c => c.id !== item.id) : p.map(c => (c.id === item.id ? { ...c, quantity: c.quantity - 1 } : c));
     });
   };
 
   const initiateCheckout = () => {
     if (!cart.length || !selectedToken) return;
-    setPaymentMode('CASH'); 
     setShowCheckout(true);
   };
 
-  const finalizeOrder = () => {
+  const finalizeOrder = (paymentData) => {
     const activeIds = new Set(orders.map(o => o.displayId));
     let candidateId = nextIdCounter;
-    while (activeIds.has(String(candidateId).padStart(3, '0'))) {
-      candidateId++;
-    }
+    while (activeIds.has(String(candidateId).padStart(3, '0'))) candidateId++;
+    
     const finalId = String(candidateId).padStart(3, '0');
     setNextIdCounter(candidateId + 1);
+
+    const isOnline = paymentData.method === 'UPI' || paymentData.method === 'CARD';
+    const fee = isOnline ? Math.round(grandTotal * transactionFeeRate) : 0;
 
     const newOrder = {
       id: Date.now(),
@@ -287,81 +166,26 @@ export default function RestaurantVendorUI() {
       token: selectedToken,
       items: cart,
       financials: {
-        subtotal: cartSubtotal,
-        tax: taxAmount,
-        discount: discount,
-        total: grandTotal,          
-        processingFee: processingFee, 
-        finalPayable: customerPayable 
+        subtotal: cartSubtotal, tax: taxAmount, discount: discount,
+        total: grandTotal, processingFee: fee, finalPayable: grandTotal + fee 
       },
-      total: grandTotal, 
-      startedAt: Date.now(),
-      payment: {
-        method: paymentMode,
-        received: paymentMode === 'CASH' ? Number(cashReceived) : customerPayable,
-        change: paymentMode === 'CASH' ? Number(cashReceived) - customerPayable : 0
-      }
+      total: grandTotal, startedAt: Date.now(), payment: paymentData
     };
 
-    setOrders((p) => [...p, newOrder]);
-    setCart([]);
-    setDiscount(0);
-    setShowCheckout(false);
-    setMobileCartOpen(false);
+    setOrders(p => [...p, newOrder]);
+    setCart([]); setDiscount(0); setShowCheckout(false);
   };
 
   const completeOrder = (id) => {
-    const orderToArchive = orders.find(o => o.id === id);
-    if (orderToArchive) {
-        setHistory(prev => [...prev, { ...orderToArchive, status: 'COMPLETED', completedAt: Date.now() }]);
-        setOrders((p) => p.filter((o) => o.id !== id));
+    const order = orders.find(o => o.id === id);
+    if (order) {
+        setHistory(prev => [...prev, { ...order, status: 'COMPLETED', completedAt: Date.now() }]);
+        setOrders(p => p.filter(o => o.id !== id));
         setViewOrder(null);
     }
   };
 
-  // --- EXPORT AS CSV (REVERTED) ---
-  const exportData = (dataToExport) => {
-    const data = dataToExport || [...history, ...orders]; 
-    if (data.length === 0) {
-        alert("No sales data to export.");
-        return;
-    }
-
-    const headers = ["Order ID", "Date", "Time", "Token", "Items", "MRP (Subtotal)", "Discount", "GST", "Proc. Fee", "Grand Total (Paid)", "Payment Mode", "Status"];
-    const rows = data.map(o => {
-        const dateObj = new Date(o.startedAt);
-        const date = dateObj.toLocaleDateString();
-        const time = dateObj.toLocaleTimeString();
-        const itemsStr = o.items.map(i => `${i.name} (x${i.quantity})`).join(" | ");
-        const status = orders.find(active => active.id === o.id) ? "ACTIVE" : "COMPLETED";
-
-        return [
-            o.displayId,
-            date,
-            time,
-            o.token,
-            `"${itemsStr}"`, 
-            o.financials?.subtotal || 0,
-            o.financials?.discount || 0,
-            o.financials?.tax || 0,
-            o.financials?.processingFee || 0,
-            o.financials?.finalPayable || o.total,
-            o.payment?.method || 'N/A',
-            status
-        ].join(",");
-    });
-
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Sales_Report_${reportDate}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // --- DYNAMIC STYLES ---
+  // --- THEME ---
   const theme = {
     bgMain: isDarkMode ? 'bg-slate-950' : 'bg-stone-50',
     bgCard: isDarkMode ? 'bg-slate-900' : 'bg-white',
@@ -374,468 +198,74 @@ export default function RestaurantVendorUI() {
     accentText: 'text-white'
   };
 
-  // --- KEYBOARD HANDLERS ---
-  const handleSearchKeyDown = (e) => { if(showCheckout || mobileCartOpen) return; if (e.key === 'ArrowDown') { e.preventDefault(); if (orders.length > 0) tokenRefs.current[0]?.focus(); else categoryRefs.current[0]?.focus(); } };
-  const handleTokenKeyDown = (e, index, order) => { if(showCheckout || mobileCartOpen) return; if (e.key === 'ArrowRight') { e.preventDefault(); tokenRefs.current[(index + 1) % orders.length]?.focus(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); tokenRefs.current[(index - 1 + orders.length) % orders.length]?.focus(); } else if (e.key === 'ArrowDown') { e.preventDefault(); categoryRefs.current[0]?.focus(); } else if (e.key === 'ArrowUp') { e.preventDefault(); searchRef.current?.focus(); } else if (e.key === 'Enter') { e.preventDefault(); setViewOrder(order); } };
-  const handleCategoryKeyDown = (e, index) => { if(showCheckout || mobileCartOpen) return; if (e.key === 'Tab') { e.preventDefault(); itemRefs.current[0]?.focus(); return; } if (e.key === 'ArrowRight') { e.preventDefault(); const next = (index + 1) % categories.length; setSelectedCategory(categories[next]); categoryRefs.current[next]?.focus(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); const prev = (index - 1 + categories.length) % categories.length; setSelectedCategory(categories[prev]); categoryRefs.current[prev]?.focus(); } else if (e.key === 'ArrowDown') { e.preventDefault(); itemRefs.current[0]?.focus(); } else if (e.key === 'ArrowUp') { e.preventDefault(); if (orders.length > 0) tokenRefs.current[0]?.focus(); else searchRef.current?.focus(); } };
-  const filteredItems = menu[selectedCategory]?.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  const handleMenuItemKeyDown = (e, index, item) => { if(showCheckout || mobileCartOpen) return; const totalItems = filteredItems.length; const gridCols = window.innerWidth >= 1280 ? 4 : window.innerWidth >= 1024 ? 3 : window.innerWidth >= 640 ? 2 : 1; if (e.key === 'Tab') { e.preventDefault(); const nextIndex = index + gridCols; if (nextIndex < totalItems) itemRefs.current[nextIndex]?.focus(); else confirmButtonRef.current?.focus(); return; } if (e.key === 'ArrowRight') { e.preventDefault(); itemRefs.current[(index + 1) % totalItems]?.focus(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); itemRefs.current[(index - 1 + totalItems) % totalItems]?.focus(); } else if (e.key === 'ArrowDown') { e.preventDefault(); const nextIndex = index + gridCols; if (nextIndex >= totalItems) confirmButtonRef.current?.focus(); else itemRefs.current[nextIndex]?.focus(); } else if (e.key === 'ArrowUp') { e.preventDefault(); if (index < gridCols) { const catIndex = categories.indexOf(selectedCategory); categoryRefs.current[catIndex]?.focus(); } else { itemRefs.current[Math.max(index - gridCols, 0)]?.focus(); } } else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); addToCart(item); } else if (e.key === 'Backspace') { e.preventDefault(); dec(item); } };
-  const handleConfirmButtonKeyDown = (e) => { if(showCheckout || mobileCartOpen) return; if (e.key === 'Tab') { e.preventDefault(); if (orders.length > 0) tokenRefs.current[0]?.focus(); else { setSelectedCategory(categories[0]); categoryRefs.current[0]?.focus(); } } if (e.key === 'ArrowUp') { e.preventDefault(); if (filteredItems.length > 0) itemRefs.current[filteredItems.length - 1]?.focus(); else { const catIndex = categories.indexOf(selectedCategory); categoryRefs.current[catIndex]?.focus(); } } };
-  const handleCheckoutKeyDown = (e) => { if (e.key === 'Escape') setShowCheckout(false); if (e.key === 'ArrowRight') setPaymentMode(prev => prev === 'CASH' ? 'UPI' : prev === 'UPI' ? 'CARD' : 'CASH'); if (e.key === 'ArrowLeft') setPaymentMode(prev => prev === 'CASH' ? 'CARD' : prev === 'CARD' ? 'UPI' : 'CASH'); if (e.key === 'Enter') { if (paymentMode === 'CASH') { if (Number(cashReceived) >= customerPayable) finalizeOrder(); } else { finalizeOrder(); } } };
+  if (isLoading) return <div className="h-screen flex items-center justify-center text-stone-500">Loading System...</div>;
 
-  // --- RENDER COMPONENT: REPORT DASHBOARD ---
-  const SalesReport = () => {
-    const allOrders = [...orders, ...history];
-    const filteredOrders = allOrders.filter(o => {
-      const d = new Date(o.startedAt);
-      const offset = d.getTimezoneOffset() * 60000;
-      const localYMD = new Date(d.getTime() - offset).toISOString().split('T')[0];
-      return localYMD === reportDate;
-    }).sort((a, b) => b.startedAt - a.startedAt);
+  if (currentView === 'REPORT') {
+    return <SalesReport orders={orders} history={history} onBack={() => setCurrentView('POS')} theme={theme} isDarkMode={isDarkMode} />;
+  }
 
-    const chartData = useMemo(() => {
-        const hours = Array(24).fill(0);
-        filteredOrders.forEach(o => {
-            const d = new Date(o.startedAt);
-            const h = d.getHours();
-            hours[h] += Number(o.total || 0); 
-        });
-        return hours;
-    }, [filteredOrders]);
-    const maxSales = Math.max(...chartData, 1); 
-
-    const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.total, 0); 
-    const totalFees = filteredOrders.reduce((sum, o) => sum + (o.financials?.processingFee || 0), 0); 
-    const totalCash = filteredOrders.filter(o => o.payment?.method === 'CASH').reduce((sum, o) => sum + o.total, 0);
-    const totalUPI = filteredOrders.filter(o => o.payment?.method === 'UPI').reduce((sum, o) => sum + o.total, 0);
-    const totalCard = filteredOrders.filter(o => o.payment?.method === 'CARD').reduce((sum, o) => sum + o.total, 0);
-
-    const backBtnRef = useRef(null);
-    const exportBtnRef = useRef(null);
-
-    useEffect(() => { setTimeout(() => backBtnRef.current?.focus(), 50); }, []);
-
-    const handleReportNav = (e, type) => {
-        if (e.key === 'Backspace') { setCurrentView('POS'); }
-        if (type === 'BACK') { if (e.key === 'ArrowRight') dateInputRef.current?.focus(); }
-        if (type === 'DATE') { if (e.key === 'ArrowLeft') backBtnRef.current?.focus(); if (e.key === 'ArrowRight') exportBtnRef.current?.focus(); }
-        if (type === 'EXPORT') { if (e.key === 'ArrowLeft') dateInputRef.current?.focus(); }
-    };
-
-    return (
-        <div className={`h-full flex flex-col p-4 md:p-6 overflow-hidden ${theme.bgMain} ${theme.textMain}`}>
-            {/* Custom Scrollbar Styles for Mobile */}
-            <style jsx global>{`
-              .custom-scrollbar::-webkit-scrollbar { height: 6px; }
-              .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-              .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 10px; }
-              .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #2563eb; }
-            `}</style>
-
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
-                <div className="flex items-center gap-4">
-                    <button ref={backBtnRef} onKeyDown={(e) => handleReportNav(e, 'BACK')} onClick={() => setCurrentView('POS')} className={`p-2 rounded-full ${theme.bgHover} border ${theme.border} outline-none focus:ring-2 focus:ring-blue-500`}>
-                        <ArrowLeft size={24}/>
-                    </button>
-                    <div>
-                        <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">Sales Report {reportDate === getLocalDate() && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full uppercase font-bold">Today</span>}</h1>
-                        <p className={`text-sm ${theme.textSec}`}>Summary for {reportDate}</p>
-                    </div>
-                </div>
-                <div className="flex gap-2 items-center w-full md:w-auto">
-                    <div onClick={() => dateInputRef.current?.showPicker()} className={`flex-1 md:flex-none flex items-center gap-2 px-3 py-2 rounded-lg border ${theme.border} ${theme.bgCard} focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer`}>
-                        <CalendarIcon size={18} className={theme.textSec} />
-                        <input ref={dateInputRef} type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} onKeyDown={(e) => handleReportNav(e, 'DATE')} className={`bg-transparent outline-none ${theme.textMain} text-sm font-medium w-full cursor-pointer`}/>
-                    </div>
-                    <button ref={exportBtnRef} onKeyDown={(e) => handleReportNav(e, 'EXPORT')} onClick={() => exportData(filteredOrders)} className={`px-4 py-2 ${theme.bgCard} border ${theme.border} rounded-lg flex items-center gap-2 hover:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none whitespace-nowrap`}><Download size={18}/><span className="hidden md:inline">Export</span></button>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <div className={`${theme.bgCard} p-3 md:p-4 rounded-xl border ${theme.border} shadow-sm`}>
-                    <div className={`${theme.textSec} text-xs md:text-sm`}>Total Revenue</div>
-                    <div className="text-2xl md:text-3xl font-bold mt-1">₹{totalRevenue}</div>
-                </div>
-                <div className={`${theme.bgCard} p-3 md:p-4 rounded-xl border ${theme.border} shadow-sm`}>
-                    <div className={`${theme.textSec} text-xs md:text-sm`}>Fees Collected</div>
-                    <div className="text-2xl md:text-3xl font-bold mt-1 text-orange-500">+₹{totalFees}</div>
-                </div>
-                <div className={`${theme.bgCard} p-3 md:p-4 rounded-xl border ${theme.border} shadow-sm`}>
-                    <div className={`${theme.textSec} text-xs md:text-sm`}>Total Orders</div>
-                    <div className="text-2xl md:text-3xl font-bold mt-1">{filteredOrders.length}</div>
-                </div>
-                <div className={`${theme.bgCard} p-3 md:p-4 rounded-xl border ${theme.border} shadow-sm`}>
-                    <div className={`${theme.textSec} text-xs md:text-sm`}>Cash / Digital</div>
-                    <div className="flex gap-2 mt-2 text-xs font-bold">
-                        <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">C: {totalCash}</span>
-                        <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">D: {totalUPI + totalCard}</span>
-                    </div>
-                </div>
-            </div>
-
-            <div className={`mb-4 rounded-xl border ${theme.border} ${theme.bgCard} p-4`}>
-                <div className="flex items-center gap-2 mb-4">
-                    <TrendingUp size={18} className="text-blue-500"/>
-                    <h2 className="font-bold text-sm">Hourly Sales Performance</h2>
-                </div>
-                <div className="custom-scrollbar overflow-x-scroll pb-4 touch-auto">
-                    <div className="h-32 md:h-48 flex gap-2 min-w-[1000px] md:min-w-0 pt-8"> 
-                        {chartData.map((val, h) => (
-                            <div key={h} className="flex-1 flex flex-col justify-end items-center gap-1 group relative h-full cursor-pointer"> 
-                                {/* TOOLTIP: Shows Amount Only */}
-                                <div className="absolute bottom-full mb-2 hidden group-hover:flex group-active:flex flex-col items-center bg-slate-800 text-white text-xs p-2 rounded-lg shadow-xl z-50 pointer-events-none min-w-[60px] left-1/2 -translate-x-1/2">
-                                    <div className="font-bold text-sm">₹{val}</div>
-                                    <div className="w-2 h-2 bg-slate-800 rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2"></div>
-                                </div>
-                                <div className={`w-full rounded-t-sm transition-all duration-500 ${val > 0 ? 'bg-blue-500 group-hover:bg-blue-400' : 'bg-stone-100/10'}`} style={{height: `${(val / maxSales) * 100}%`, minHeight: val > 0 ? '4px' : '0'}}></div>
-                                <span className={`text-[9px] md:text-[10px] ${theme.textSec}`}>{h}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            <div className={`flex-1 overflow-hidden rounded-xl border ${theme.border} ${theme.bgCard} flex flex-col`}>
-                <div className={`p-3 border-b ${theme.border} flex justify-between items-center bg-opacity-50 ${isDarkMode ? 'bg-slate-800' : 'bg-stone-50'}`}>
-                    <h2 className="font-bold flex items-center gap-2"><Banknote size={18}/> <span className="hidden md:inline">Transaction History</span><span className="md:hidden">History</span></h2>
-                </div>
-                <div className="flex-1 overflow-y-auto focus:ring-2 focus:ring-inset focus:ring-blue-500 outline-none" tabIndex={0}>
-                    <table className="w-full text-sm text-left">
-                        <thead className={`${theme.textSec} border-b ${theme.border} sticky top-0 ${theme.bgCard}`}>
-                            <tr>
-                                <th className="p-3 font-medium">ID</th>
-                                <th className="p-3 font-medium hidden md:table-cell">Time</th>
-                                <th className="p-3 font-medium hidden md:table-cell">Items</th>
-                                <th className="p-3 font-medium text-stone-500">MRP</th>
-                                <th className="p-3 font-medium text-green-500">Disc</th>
-                                <th className="p-3 font-medium text-stone-500">GST</th>
-                                <th className="p-3 font-medium text-orange-500">Fee</th>
-                                <th className="p-3 font-medium">Total</th>
-                                <th className="p-3 font-medium text-right">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {filteredOrders.map((o) => (
-                                <tr key={o.id} className={theme.bgHover}>
-                                    <td className="p-3 font-mono font-bold">#{o.displayId}</td>
-                                    <td className="p-3 hidden md:table-cell">{new Date(o.startedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
-                                    <td className="p-3 truncate max-w-xs hidden md:table-cell">{o.items.map(i => i.name).join(", ")}</td>
-                                    <td className="p-3 text-stone-500">₹{o.financials?.subtotal || 0}</td>
-                                    <td className="p-3 text-green-500 text-xs font-bold">{o.financials?.discount > 0 ? `-₹${o.financials.discount}` : '-'}</td>
-                                    <td className="p-3 text-stone-500 text-xs">₹{o.financials?.tax || 0}</td>
-                                    <td className="p-3 text-orange-500 text-xs font-bold">{o.financials?.processingFee > 0 ? `+₹${o.financials.processingFee}` : '-'}</td>
-                                    <td className="p-3 font-bold">₹{o.financials?.finalPayable || o.total}</td>
-                                    <td className="p-3 text-right">
-                                        {orders.find(active => active.id === o.id) ? <span className="text-orange-500 text-xs font-bold bg-orange-100 px-2 py-1 rounded">ACT</span> : <span className="text-green-500 text-xs font-bold bg-green-100 px-2 py-1 rounded">DONE</span>}
-                                    </td>
-                                </tr>
-                            ))}
-                            {filteredOrders.length === 0 && <tr><td colSpan="9" className="p-8 text-center text-stone-400">No transactions found for {reportDate}.</td></tr>}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    );
-  };
-
-  if (currentView === 'REPORT') return <SalesReport />;
-
+  // --- RENDER MAIN LAYOUT ---
   return (
     <div className={`h-screen flex flex-col md:flex-row overflow-hidden font-sans transition-colors duration-200 ${theme.bgMain} ${theme.textMain}`}>
       
-      {/* --- CHECKOUT MODAL --- */}
-      {showCheckout && (
-        <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center animate-in fade-in duration-200" onKeyDown={handleCheckoutKeyDown}>
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowCheckout(false)} />
-            <div className={`relative ${theme.bgCard} w-full md:max-w-md h-[90vh] md:h-auto rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col`}>
-                <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-stone-900'} text-white p-6 flex justify-between items-center shrink-0`}>
-                    <div>
-                        <div className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-1">Customer Pays</div>
-                        <div className="text-4xl font-bold">₹{customerPayable}</div>
-                        {processingFee > 0 && <div className="text-xs text-orange-300 mt-1">Includes ₹{processingFee} fee</div>}
-                    </div>
-                    <div className="text-right">
-                        <div className="text-stone-400 text-xs font-medium uppercase tracking-wider mb-1">You Receive</div>
-                        <div className="text-xl font-bold">₹{grandTotal}</div>
-                        <div className="bg-white/10 px-2 py-0.5 rounded text-xs font-mono mt-2 inline-block">Order #{String(nextIdCounter).padStart(3, '0')}</div>
-                    </div>
-                </div>
-                <div className="p-6 space-y-6 overflow-y-auto flex-1">
-                    <div className="grid grid-cols-3 gap-3">
-                        {['CASH', 'UPI', 'CARD'].map(mode => (
-                            <button key={mode} onClick={() => setPaymentMode(mode)} className={`flex flex-col items-center justify-center gap-2 py-4 rounded-xl border-2 transition-all ${paymentMode === mode ? 'border-blue-600 bg-blue-50/10 text-blue-500' : `${theme.border} ${theme.bgCard} ${theme.textSec} hover:border-stone-400`}`}>
-                                {mode === 'CASH' && <Banknote size={24} />}
-                                {mode === 'UPI' && <QrCode size={24} />}
-                                {mode === 'CARD' && <CreditCard size={24} />}
-                                <span className="font-bold text-xs tracking-wider">{mode}</span>
-                            </button>
-                        ))}
-                    </div>
-                    {paymentMode === 'CASH' ? (
-                        <div className={`${isDarkMode ? 'bg-slate-800/50' : 'bg-stone-50'} rounded-2xl p-4 border ${theme.border} space-y-4`}>
-                            <div>
-                                <label className="block text-xs font-bold text-stone-400 uppercase mb-1">Cash Received</label>
-                                <div className="relative">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-bold text-stone-400">₹</span>
-                                    <input ref={cashInputRef} type="number" min="0" value={cashReceived} onChange={(e) => { if(Number(e.target.value) >= 0) setCashReceived(e.target.value); }} className={`w-full pl-8 pr-4 py-3 text-2xl font-bold ${theme.bgCard} ${theme.textMain} ${theme.border} border rounded-xl focus:ring-4 focus:ring-blue-500 outline-none`} placeholder="0"/>
-                                </div>
-                            </div>
-                            <div className={`flex justify-between items-center pt-2 border-t border-dashed ${theme.border}`}>
-                                <span className={theme.textSec}>Change</span>
-                                <span className={`text-2xl font-bold ${(Number(cashReceived) - customerPayable) < 0 ? 'text-stone-500' : 'text-green-500'}`}>₹{Math.max(0, Number(cashReceived) - customerPayable)}</span>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="bg-blue-500/10 rounded-2xl p-6 border border-blue-500/20 flex flex-col items-center text-center gap-2">
-                             {paymentMode === 'UPI' ? (
-                                <>
-                                    <div className="bg-white p-3 rounded-lg"><img src={getUPIQR()} alt="UPI QR" className="w-48 h-48 object-contain"/></div>
-                                    <div className="text-blue-500 font-medium text-sm mt-2">Scan to Pay ₹{customerPayable}</div>
-                                </>
-                             ) : (
-                                <>
-                                    <CreditCard size={48} className="text-blue-400"/>
-                                    <div className="text-blue-500 font-medium">Use Card Machine</div>
-                                    <div className="text-blue-400 text-xs">Charge ₹{customerPayable} on device</div>
-                                </>
-                             )}
-                        </div>
-                    )}
-                    <button onClick={finalizeOrder} disabled={paymentMode === 'CASH' && Number(cashReceived) < customerPayable} className={`w-full py-4 ${theme.accent} ${theme.accentText} rounded-xl font-bold text-lg hover:opacity-90 disabled:opacity-50 transition-all shadow-xl`}>
-                        {paymentMode === 'CASH' ? (Number(cashReceived) < customerPayable ? 'Enter Full Amount' : `Accept Payment`) : 'Confirm Payment'}
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
+      {/* 1. Checkout Modal */}
+      <CheckoutModal 
+        isOpen={showCheckout} 
+        onClose={() => setShowCheckout(false)} 
+        onConfirm={finalizeOrder}
+        totalPayable={grandTotal + estimatedFee}
+        grandTotal={grandTotal}
+        selectedToken={selectedToken}
+        orderId={String(nextIdCounter).padStart(3, '0')}
+        processingFee={estimatedFee}
+        theme={theme}
+        isDarkMode={isDarkMode}
+      />
 
-      {/* --- REST OF THE UI (View Order, Active Orders, Main Layout) IS SAME AS BEFORE --- */}
-      {viewOrder && (
-        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center animate-in fade-in duration-200">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setViewOrder(null)} />
-          <div className={`relative ${theme.bgCard} w-full md:max-w-sm h-[80vh] md:h-auto rounded-t-3xl md:rounded-2xl shadow-2xl p-6 flex flex-col gap-4 mx-0 md:mx-4`}>
-            <div className={`flex justify-between items-start border-b ${theme.border} pb-4 shrink-0`}>
-               <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl font-black">Token {viewOrder.token}</span>
-                    <span className="bg-blue-100 text-blue-700 font-bold px-2 py-1 rounded text-sm">#{viewOrder.displayId}</span>
-                  </div>
-                  <div className={`${theme.textSec} text-sm mt-1 flex items-center gap-2`}><Clock size={14} /> Preparing <OrderTimer startedAt={viewOrder.startedAt} /></div>
-               </div>
-               <button onClick={() => setViewOrder(null)} className={`p-2 ${theme.bgHover} rounded-full ${theme.textSec}`}><X size={24} /></button>
-            </div>
-            <div className="py-2 space-y-3 overflow-y-auto flex-1">
-               {viewOrder.items.map((item) => (
-                 <div key={item.id} className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                       <div className="font-bold">{item.name}</div>
-                       <div className="text-stone-400 text-xs">x{item.quantity}</div>
-                    </div>
-                    <div className="font-mono">₹{item.price * item.quantity}</div>
-                 </div>
-               ))}
-               <div className={`border-t border-dashed ${theme.border} my-2`}></div>
-               <div className="flex justify-between items-center text-lg font-bold"><span>Total Bill</span><span>₹{viewOrder.total}</span></div>
-            </div>
-            <div className="pt-2 flex flex-col gap-2 shrink-0">
-               <button ref={releaseBtnRef} onClick={() => completeOrder(viewOrder.id)} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl flex items-center justify-center gap-2"><Check size={20} /> Mark Ready</button>
-               <button onClick={() => setViewOrder(null)} className={`w-full py-2 ${theme.textSec} hover:${theme.textMain} font-medium text-sm`}>Close Details</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 2. Active Orders Drawer */}
+      <ActiveOrdersDrawer 
+        isOpen={ordersOpen}
+        onClose={() => setOrdersOpen(false)}
+        orders={orders}
+        onCompleteOrder={completeOrder}
+        theme={theme}
+        isDarkMode={isDarkMode}
+      />
 
-      {ordersOpen && (
-        <div className="fixed inset-0 z-50 flex justify-start animate-in fade-in duration-200">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOrdersOpen(false)} />
-          <div className={`relative ${theme.bgCard} w-full md:w-full md:max-w-md h-full shadow-2xl flex flex-col`}>
-            <div className={`p-4 border-b ${theme.border} flex justify-between items-center`}>
-              <h2 className="font-bold text-lg flex items-center gap-2"><ChefHat className="text-orange-500" /> Active Orders</h2>
-              <button onClick={() => setOrdersOpen(false)} className={`p-2 ${theme.bgHover} rounded-full`}><X size={20} /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {orders.map((o) => (
-                <div key={o.id} className={`border ${theme.border} ${theme.bgCard} rounded-xl shadow-sm overflow-hidden`}>
-                  <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-stone-50'} p-3 flex justify-between items-center border-b ${theme.border}`}>
-                    <div className="flex gap-2 items-center">
-                      <span className={`font-bold ${theme.accent} text-white px-2 py-0.5 rounded text-sm`}>T-{o.token}</span>
-                      <span className={`text-xs font-bold ${theme.textSec}`}>#{o.displayId}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <OrderTimer startedAt={o.startedAt} />
-                      <button onClick={() => completeOrder(o.id)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded-full"><Check size={16} /></button>
-                    </div>
-                  </div>
-                  <div className="p-3">
-                    {o.items.map((i) => (
-                      <div key={i.id} className={`flex justify-between text-sm py-1 border-b border-dashed last:border-0 ${theme.border}`}>
-                        <span>{i.name} <span className="text-stone-400 text-xs">x{i.quantity}</span></span>
-                      </div>
-                    ))}
-                    <div className="text-right font-bold mt-2">₹{o.total}</div>
-                  </div>
-                </div>
-              ))}
-              {orders.length === 0 && <div className={`text-center mt-10 ${theme.textSec}`}>No active orders.</div>}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 3. Order Details Modal (Single Order) */}
+      <OrderDetailsModal 
+        order={viewOrder}
+        onClose={() => setViewOrder(null)}
+        onComplete={completeOrder}
+        theme={theme}
+      />
 
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <div className={`${theme.bgCard} border-b ${theme.border} px-4 md:px-6 py-3 md:py-4 flex justify-between items-center gap-4 shadow-sm z-10 shrink-0`}>
-          <div>
-            <h1 className="text-lg md:text-xl font-bold">POS</h1>
-            <p className={`text-xs ${theme.textSec} hidden md:block`}><span className="cursor-pointer text-blue-500 hover:underline" onClick={() => setOrdersOpen(true)}>Manage Active (Ctrl+O)</span></p>
-          </div>
-          <div className="flex items-center gap-2 md:gap-3 w-full justify-end">
-             <div className="relative w-full max-w-[180px] md:max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={16} />
-                <input ref={searchRef} onKeyDown={handleSearchKeyDown} className={`w-full pl-9 pr-4 py-2 ${theme.inputBg} border-none rounded-full text-sm focus:ring-2 focus:ring-blue-500 outline-none ${theme.textMain}`} placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}/>
-             </div>
-             <button onClick={() => setOrdersOpen(true)} className={`md:hidden p-2 rounded-full ${theme.bgHover} ${theme.textSec} border ${theme.border}`}><ChefHat size={18} /></button>
-             <button onClick={() => setCurrentView('REPORT')} className={`p-2 rounded-full ${theme.bgHover} ${theme.textSec} border ${theme.border}`}><BarChart3 size={18} /></button>
-             <button onClick={() => setIsDarkMode(p => !p)} className={`p-2 rounded-full ${theme.bgHover} ${theme.textSec} border ${theme.border}`}>{isDarkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
-          </div>
-        </div>
-
-        {orders.length > 0 && (
-          <div className={`${isDarkMode ? 'bg-slate-900/50' : 'bg-stone-50'} border-b ${theme.border} px-4 md:px-6 py-2 overflow-x-auto whitespace-nowrap scrollbar-hide shrink-0`}>
-             <div className="flex gap-3 items-center">
-                {orders.map((o, index) => (
-                   <button key={o.id} ref={el => tokenRefs.current[index] = el} onKeyDown={(e) => handleTokenKeyDown(e, index, o)} onClick={() => setViewOrder(o)} className={`cursor-pointer inline-flex items-center gap-2 ${theme.bgCard} border ${theme.border} rounded-full px-1 py-1 pr-3 shadow-sm transition-all`}>
-                      <span className={`text-xs font-bold text-white ${theme.accent} px-2 py-0.5 rounded-full`}>T-{o.token}</span>
-                      <span className={`text-xs font-mono border-l pl-2 ${theme.border}`}><OrderTimer startedAt={o.startedAt} /></span>
-                   </button>
-                ))}
-             </div>
-          </div>
-        )}
-
-        <div className={`${theme.bgCard} border-b ${theme.border} px-4 md:px-6 py-2 overflow-x-auto whitespace-nowrap shrink-0`}>
-          <div className="flex gap-2">
-            {categories.map((cat, i) => (
-              <button key={cat} ref={(el) => (categoryRefs.current[i] = el)} onClick={() => setSelectedCategory(cat)} onKeyDown={(e) => handleCategoryKeyDown(e, i)} className={`px-4 py-1.5 rounded-full text-xs md:text-sm font-medium transition-all outline-none focus:ring-2 focus:ring-blue-500 ${selectedCategory === cat ? `${theme.accent} text-white shadow-md` : `${isDarkMode ? 'bg-slate-800' : 'bg-stone-100'} ${theme.textSec}`}`}>{cat}</button>
-            ))}
-          </div>
-        </div>
-
-        <div className={`flex-1 overflow-y-auto p-4 md:p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-stone-50/50'}`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 pb-24 md:pb-20">
-            {filteredItems?.map((i, index) => (
-              <div key={i.id} ref={(el) => (itemRefs.current[index] = el)} tabIndex={0} onKeyDown={(e) => handleMenuItemKeyDown(e, index, i)} onClick={() => addToCart(i)} className={`${theme.bgCard} border ${theme.border} rounded-xl p-3 md:p-4 shadow-sm active:scale-95 transition-all flex flex-col gap-3 cursor-pointer outline-none focus:ring-2 focus:ring-blue-500`}>
-                <div className="flex gap-3 pointer-events-none">
-                  <div className={`w-14 h-14 md:w-16 md:h-16 ${theme.inputBg} rounded-lg flex items-center justify-center overflow-hidden shrink-0`}>
-                     {i.imageQuery ? <div className="w-full h-full object-cover text-[10px] flex items-center justify-center text-center text-stone-400"><Utensils size={20} /></div> : <Utensils className="text-stone-300" />}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold leading-tight text-sm md:text-base">{i.name}</h3>
-                    <div className={`${theme.textSec} text-xs md:text-sm mt-1`}>₹{i.price}</div>
-                  </div>
-                </div>
-                <div className={`flex items-center justify-between mt-auto pt-2 border-t ${theme.border} pointer-events-none`}>
-                  {qty(i.id) > 0 ? (
-                    <div className={`flex items-center gap-3 ${theme.inputBg} rounded-lg px-2 py-1 w-full justify-between`}>
-                      <span className="font-semibold text-sm w-4 text-center">{qty(i.id)}</span>
-                    </div>
-                  ) : <div className="w-full text-center text-stone-400 text-xs">Add</div>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {cart.length > 0 && (
-          <div className="md:hidden absolute bottom-4 left-4 right-4 z-40">
-            <button onClick={() => setMobileCartOpen(true)} className={`w-full ${theme.accent} text-white p-4 rounded-2xl shadow-xl flex justify-between items-center`}>
-              <div className="flex items-center gap-3">
-                <div className="bg-white/20 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">{cart.reduce((a, b) => a + b.quantity, 0)}</div>
-                <div className="text-left"><div className="text-xs opacity-80">Total</div><div className="font-bold">₹{cartSubtotal}</div></div>
-              </div>
-              <div className="flex items-center gap-1 font-bold text-sm">View Cart <ChevronRight size={16} /></div>
-            </button>
-          </div>
-        )}
-      </div>
-
-      {mobileCartOpen && <div className="md:hidden fixed inset-0 bg-black/50 z-40 backdrop-blur-sm" onClick={() => setMobileCartOpen(false)} />}
-      <div className={`fixed inset-y-0 right-0 w-[85%] md:w-[380px] ${theme.bgCard} border-l ${theme.border} h-full flex flex-col shadow-2xl z-50 transform transition-transform duration-300 ${mobileCartOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} md:static`}>
-        <div className={`p-5 border-b ${theme.border} ${isDarkMode ? 'bg-slate-900' : 'bg-stone-50'} flex justify-between items-center`}>
-          <h2 className="font-bold text-lg flex items-center gap-2"><ShoppingCart size={20} /> Current Order</h2>
-          <button onClick={() => setMobileCartOpen(false)} className="md:hidden p-2 bg-stone-100 rounded-full"><X size={20} className="text-black"/></button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-1">
-          {cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-stone-400 space-y-2">
-              <ShoppingCart size={48} className="opacity-20" />
-              <p>Start adding items</p>
-            </div>
-          ) : (
-            cart.map((i) => (
-              <div key={i.id} className={`flex justify-between items-center py-3 border-b ${theme.border} last:border-0 group`}>
-                <div className="flex-1">
-                  <div className="font-medium text-sm">{i.name}</div>
-                  <div className={`text-xs ${theme.textSec}`}>₹{i.price * i.quantity}</div>
-                </div>
-                <div className={`flex items-center gap-2 ${theme.inputBg} rounded-lg border ${theme.border} px-1 py-0.5`}>
-                  <button onClick={() => dec(i)} className={`p-1 ${theme.bgHover} rounded shadow-sm`}><Minus size={12} /></button>
-                  <span className="text-xs font-semibold w-4 text-center">{i.quantity}</span>
-                  <button onClick={() => addToCart(i)} className={`p-1 ${theme.bgHover} rounded shadow-sm`}><Plus size={12} /></button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-        <div className={`p-4 ${isDarkMode ? 'bg-slate-900' : 'bg-stone-50'} border-t ${theme.border} space-y-3`}>
-           <div className="space-y-1 text-sm">
-             <div className={`flex justify-between ${theme.textSec}`}><span>Subtotal</span><span>₹{cartSubtotal}</span></div>
-             <div className={`flex justify-between ${theme.textSec}`}><span>Tax (5%)</span><span>+₹{taxAmount}</span></div>
-             <div className={`flex justify-between ${theme.textSec}`}><span>Discount</span><span className={discount > 0 ? 'text-green-500' : ''}>-₹{discount}</span></div>
-           </div>
-           <div className="flex items-center gap-2">
-             {showDiscountInput ? (
-               <div className="flex items-center gap-2 w-full animate-in fade-in">
-                  <span className="text-xs font-bold text-stone-400">₹</span>
-                  
-                  {/* --- UPDATED DISCOUNT INPUT --- */}
-                  {/* Added max attribute and logic to clamp value to total bill amount */}
-                  <input 
-                    ref={discountInputRef} 
-                    type="number" 
-                    min="0" 
-                    max={cartSubtotal + taxAmount} // Limits browser spinner
-                    value={discount || ''} 
-                    onChange={e => {
-                        const val = Number(e.target.value);
-                        const maxAllowed = cartSubtotal + taxAmount;
-                        // LOGIC: If value is valid (>=0) and within limit, set it. 
-                        // If it exceeds limit, cap it at maxAllowed.
-                        if (val >= 0 && val <= maxAllowed) {
-                            setDiscount(val);
-                        } else if (val > maxAllowed) {
-                            setDiscount(maxAllowed);
-                        }
-                    }} 
-                    className={`w-full p-2 text-sm rounded-lg ${theme.inputBg} ${theme.textMain} outline-none border ${theme.border}`} 
-                    placeholder="Disc Amount"
-                  />
-                  
-                  <button onClick={() => setShowDiscountInput(false)} className="p-2 bg-stone-200 text-stone-600 rounded-lg"><Check size={14}/></button>
-               </div>
-             ) : (
-               <button onClick={() => setShowDiscountInput(true)} className={`text-xs flex items-center gap-1 ${theme.textSec} hover:text-blue-500`}><Percent size={12}/> Add Discount</button>
-             )}
-           </div>
-           <div className={`flex justify-between items-center text-xl font-bold ${theme.textMain} pt-2 border-t ${theme.border}`}><span>Total</span><span>₹{grandTotal}</span></div>
-           <div className="space-y-2 pt-2">
-             <select value={selectedToken} onChange={(e) => setSelectedToken(e.target.value)} className={`w-full p-2.5 rounded-lg border ${theme.border} ${theme.bgCard} ${theme.textMain} text-sm focus:ring-2 focus:ring-blue-500 outline-none`}>
-              {availableTokens.length === 0 ? <option disabled>No Tokens</option> : <><option value="" disabled>Select Token</option>{availableTokens.map((t) => <option key={t} value={t}>Token {t}</option>)}</>}
-             </select>
-             <button ref={confirmButtonRef} onKeyDown={handleConfirmButtonKeyDown} onClick={initiateCheckout} disabled={!cart.length || !selectedToken} className={`w-full py-3 ${theme.accent} ${theme.accentText} rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-lg`}>Checkout</button>
-           </div>
-        </div>
-      </div>
+      {/* 4. Main POS View */}
+      <POSView 
+        // Data
+        orders={orders}
+        cart={cart}
+        selectedToken={selectedToken}
+        availableTokens={availableTokens}
+        discount={discount}
+        grandTotal={grandTotal}
+        cartSubtotal={cartSubtotal}
+        taxAmount={taxAmount}
+        maxDiscount={maxDiscount}
+        // Actions
+        onAddToCart={handleAddToCart}
+        onRemoveFromCart={handleRemoveFromCart}
+        onSetDiscount={setDiscount}
+        onSetToken={setSelectedToken}
+        onCheckout={initiateCheckout}
+        onViewOrder={setViewOrder}
+        onOpenOrders={() => setOrdersOpen(true)}
+        onOpenReport={() => setCurrentView('REPORT')}
+        onToggleTheme={() => setIsDarkMode(p => !p)}
+        // Theme
+        theme={theme}
+        isDarkMode={isDarkMode}
+      />
     </div>
   );
 }
