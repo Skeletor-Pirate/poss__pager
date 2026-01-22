@@ -5,25 +5,19 @@ import RestaurantVendorUI from './components/ui/RestaurantVendorUI';
 function App() {
   const [user, setUser] = useState(null);
 
-  // restore session
+  // Restore session safely
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('auth_user');
-      if (!saved) return;
-  
-      const parsed = JSON.parse(saved);
-  
-      // validate shape
-      if (parsed && parsed.email) {
-        setUser(parsed);
-      } else {
-        localStorage.removeItem('auth_user');
+    const token = localStorage.getItem('auth_token');
+    const savedUser = localStorage.getItem('auth_user');
+
+    if (token && savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch {
+        localStorage.clear();
       }
-    } catch {
-      localStorage.removeItem('auth_user');
     }
   }, []);
-  
 
   const handleLogin = (user) => {
     setUser(user);
@@ -39,7 +33,7 @@ function App() {
   const theme = {
     bgMain: 'bg-slate-950',
     bgCard: 'bg-slate-900',
-    textMain: 'text-white'
+    textMain: 'text-white',
   };
 
   if (!user) {

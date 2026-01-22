@@ -1,16 +1,7 @@
 import React, { useState } from 'react';
-import { Lock, ChefHat, Mail } from 'lucide-react';
+import { ChefHat } from 'lucide-react';
 
 const API = 'http://localhost:3000';
-
-function parseJwt(token) {
-  try {
-    const base64 = token.split('.')[1];
-    return JSON.parse(atob(base64));
-  } catch {
-    return null;
-  }
-}
 
 export default function LoginView({ onLogin, theme }) {
   const [mode, setMode] = useState('login');
@@ -58,27 +49,33 @@ export default function LoginView({ onLogin, theme }) {
 
       const data = await res.json();
 
+      // Handle common backend errors cleanly
       if (!res.ok) {
-        throw new Error(data.message || 'Request failed');
+        if (res.status === 409) {
+          throw new Error("User already exists. Please login instead.");
+        }
+        throw new Error(data.message || "Request failed");
       }
 
+      // Token is mandatory
       if (!data.token) {
-        throw new Error("No token returned from server");
+        throw new Error("Server did not return token. Backend bug.");
       }
 
-      // Save token
-      localStorage.setItem('auth_token', data.token);
+      // Store token safely
+      localStorage.setItem("auth_token", data.token);
 
-      // Decode user from JWT
-      const user = parseJwt(data.token);
+      // DO NOT decode token here. Just trust backend.
+      // Let backend be source of truth.
+      const safeUser = {
+        email: form.email,
+        role: form.role || "cashier"
+      };
 
-      if (!user) {
-        throw new Error("Invalid token payload");
-      }
-
-      onLogin(user);
+      onLogin(safeUser);
 
     } catch (err) {
+      console.error(err);
       setError(err.message);
     } finally {
       setLoading(false);

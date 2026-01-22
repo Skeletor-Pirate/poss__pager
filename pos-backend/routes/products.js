@@ -1,11 +1,15 @@
-const express=require('express');
-const bodyParser=require('body-parser');
-const productController=require('../controllers/productController');
-const authorizeRoles=require('../middleware/roleMiddleware');
-const router=express.Router();
+const express = require('express');
+const productController = require('../controllers/productController');
+const authorizeRoles = require('../middleware/roleMiddleware');
 
-// route to add a new product
-router.post('/',authorizeRoles('admin'),productController.addProduct);
-// route to get all products
-router.get('/',authorizeRoles('admin','manager'),productController.getAllProducts);
-module.exports=router;
+const router = express.Router();
+
+// Only admin can modify products
+router.post('/', authorizeRoles('admin'), productController.addProduct);
+router.put('/:id', authorizeRoles('admin'), productController.updateProduct);
+router.delete('/:id', authorizeRoles('admin'), productController.deleteProduct);
+
+// Everyone can view
+router.get('/', authorizeRoles('admin', 'manager', 'cashier'), productController.getAllProducts);
+
+module.exports = router;
