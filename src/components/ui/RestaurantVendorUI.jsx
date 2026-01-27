@@ -1,42 +1,38 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { LogOut, Plus, Trash2, Edit, Save, X, User, Coffee, Settings, Moon, Sun } from 'lucide-react';
 import POSView from './POSView';
 import CheckoutModal from './CheckoutModal';
 import AdminSettingsModal from './AdminSettingsModal';
+import { LogOut, Plus, Trash2, Edit, Save, User, Coffee, Settings, Moon, Sun } from 'lucide-react';
 
 export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme }) {
   const API_URL = "http://localhost:3000";
   const token = localStorage.getItem("auth_token");
-  const isMounted = useRef(false); // Used to prevent ESP ping on initial page load
+  const isMounted = useRef(false);
 
-  // --- ROLE LOGIC ---
-  const findRoleInObject = (obj) => {
-      if (!obj) return null;
-      if (typeof obj !== 'object') return null;
-      if (obj.role) return obj.role;
-      if (obj.user && obj.user.role) return obj.user.role;
-      return null;
+  // --- 1. ROBUST ROLE LOGIC (Fixes "Missing Admin" on Refresh) ---
+  const getRole = () => {
+      // Priority 1: Prop passed from App
+      if (user?.role) return user.role;
+      if (user?.user?.role) return user.user.role;
+      
+      // Priority 2: LocalStorage Backup (If page refreshed)
+      const storedRole = localStorage.getItem("user_role");
+      if (storedRole) return storedRole;
+
+      return 'cashier'; // Default
   };
-  let userRole = findRoleInObject(user) || 'cashier';
-  if (userRole === 'manager') userRole = 'cashier';
+  const userRole = getRole();
 
-  // --- STATE ---
+  // --- STATE (Memory Only) ---
   const [rawProducts, setRawProducts] = useState([]);
   const [menu, setMenu] = useState({});
   const [categories, setCategories] = useState([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const hasFetched = useRef(false);
 
-  // Cart Persistence
-  const [cart, setCart] = useState(() => {
-      try { const s = localStorage.getItem("pos_cart"); return s ? JSON.parse(s) : []; } catch (e) { return []; }
-  });
-
-  // Token Persistence
-  const [selectedToken, setSelectedToken] = useState(() => {
-      return localStorage.getItem("pos_selected_token") || "1";
-  });
-
+  // Cart & Token State
+  const [cart, setCart] = useState([]);
+  const [selectedToken, setSelectedToken] = useState("1");
   const [orders, setOrders] = useState([]); 
   const [showCheckout, setShowCheckout] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -49,19 +45,16 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
 
   // Admin State
   const [activeTab, setActiveTab] = useState('menu');
-  const [usersList, setUsersList] = useState([]);
+  const [usersList, setUsersList] = useState([]); // Staff list
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [newItem, setNewItem] = useState({ name: '', price: '', category: '' });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', price: '', category: '' });
   const [newUser, setNewUser] = useState({ email: '', password: '', role: 'cashier' });
 
-  // --- PERSISTENCE EFFECT ---
-  useEffect(() => { localStorage.setItem("pos_cart", JSON.stringify(cart)); }, [cart]);
+  // --- CORE FUNCTIONS ---
   
-  // --- CORE FUNCTIONS (Defined early to be used in effects) ---
-  
-  // 1. Call Customer (UART Ping)
+  // Call Customer (UART)
   const handleCallCustomer = async (tokenNum) => {
       try {
         await fetch(`${API_URL}/orders/call-token`, { 
@@ -69,11 +62,10 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ token: Number(tokenNum) })
         });
-        console.log(`Signal sent for Token ${tokenNum}`);
       } catch (e) { console.error("Call failed", e); }
   };
 
-  // 2. Fetch Active Orders (Kitchen View Sync)
+  // Fetch Orders
   const fetchActiveOrders = async () => {
     try {
         const res = await fetch(`${API_URL}/orders`, { headers: { Authorization: `Bearer ${token}` } });
@@ -86,35 +78,24 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
 
   // --- EFFECTS ---
 
-  // 1. Auto-Ping ESP32 when Token Selector Changes
-  useEffect(() => { 
-      localStorage.setItem("pos_selected_token", selectedToken); 
-      
-      // Prevent running on initial page load (so it doesn't beep just by refreshing)
-      if (!isMounted.current) {
-          isMounted.current = true;
-          return;
-      }
-
-      // Debounce: Wait 500ms after user stops changing token before pinging
-      const timer = setTimeout(() => {
-          handleCallCustomer(selectedToken); 
-      }, 500);
-
-      return () => clearTimeout(timer);
-  }, [selectedToken]);
-
-  // 2. Initial Data Load (Menu, Settings, Users)
+  // 1. Initial Data Load
   useEffect(() => {
     if (hasFetched.current) return;
     hasFetched.current = true;
+    
+    // Save role to storage so it survives refresh
+    if (userRole) localStorage.setItem("user_role", userRole);
+
     async function loadData() {
       try {
+        // Load Products
         const prodRes = await fetch(`${API_URL}/products`, { headers: { Authorization: `Bearer ${token}` } });
         if (prodRes.ok) {
           const list = await prodRes.json();
           const productList = Array.isArray(list) ? list : list.products || [];
           setRawProducts(productList);
+          
+          // Organize Menu
           const grouped = {};
           const cats = [];
           productList.forEach(p => {
@@ -126,27 +107,34 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
           setCategories(cats);
           setSelectedCategory(cats[0] || "");
         }
+
+        // Load Settings
         const setRes = await fetch(`${API_URL}/settings`, { headers: { Authorization: `Bearer ${token}` } });
         if (setRes.ok) {
            const s = await setRes.json();
            if (s.upi_id) setSettings({ upiId: s.upi_id, payeeName: s.payee_name });
         }
+
+        // Load Users (Admin Only)
         if (userRole === 'admin') {
+           console.log("Fetching users list...");
            const userRes = await fetch(`${API_URL}/auth/users`, { headers: { Authorization: `Bearer ${token}` } });
-           if (userRes.ok) setUsersList(await userRes.json());
+           if (userRes.ok) {
+               const uList = await userRes.json();
+               setUsersList(uList);
+           }
         }
       } catch (e) { console.error("Init Error", e); }
     }
     loadData();
   }, [token, userRole]);
 
-  // 3. Sync Orders Loop
+  // 2. Sync Orders Loop
   useEffect(() => {
     fetchActiveOrders();
     const intervalId = setInterval(fetchActiveOrders, 3000);
     return () => clearInterval(intervalId);
   }, [token]);
-
 
   // --- ADMIN ACTIONS ---
   const refreshData = () => { hasFetched.current = false; window.location.reload(); };
@@ -154,9 +142,9 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
   const handleAdminDeleteProduct = async (id) => { if(!confirm("Delete?")) return; await fetch(`${API_URL}/products/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }); refreshData(); };
   const handleAdminAddProduct = async () => { await fetch(`${API_URL}/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(newItem) }); refreshData(); };
   const handleAdminAddUser = async () => { const res = await fetch(`${API_URL}/auth/signup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) }); if(res.ok) { alert("Created"); refreshData(); } else alert("Failed"); };
-  const handleAdminDeleteUser = async (id) => { if(id === user.id) return alert("No self-delete"); if(!confirm("Delete?")) return; await fetch(`${API_URL}/auth/users/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }); refreshData(); };
+  const handleAdminDeleteUser = async (id) => { if(!confirm("Delete User?")) return; await fetch(`${API_URL}/auth/users/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }); refreshData(); };
 
-  // --- POS CALCULATIONS ---
+  // --- POS LOGIC ---
   const cartSubtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const afterDiscount = Math.max(0, cartSubtotal - Number(discount));
   const taxAmount = afterDiscount * (taxRate / 100);
@@ -167,34 +155,15 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
     return Array.from({ length: 50 }, (_, i) => String(i + 1)).filter(t => !used.includes(t));
   }, [orders]);
 
-  // Auto-switch token if current one gets taken
-  useEffect(() => {
-    if (availableTokens.length > 0 && !availableTokens.includes(selectedToken)) {
-        setSelectedToken(availableTokens[0]);
-    }
-  }, [availableTokens, selectedToken]);
-
   const addToCart = item => setCart(p => { const f = p.find(i => i.id === item.id); return f ? p.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i) : [...p, { ...item, quantity: 1 }]; });
   const removeFromCart = item => setCart(prev => { const existing = prev.find(i => i.id === item.id); if (!existing) return prev; if (existing.quantity === 1) return prev.filter(i => i.id !== item.id); return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i); });
 
-
-  // --- CHECKOUT LOGIC (Fixes "Stuck on Generating") ---
   const finalizeOrder = async (paymentData) => {
     const tokenToUse = Number(selectedToken);
-    
-    // Validation
-    if (!tokenToUse || isNaN(tokenToUse)) {
-        alert("Invalid Token! Please select a token first.");
-        return;
-    }
-    const isTokenTaken = orders.some(o => o.token === tokenToUse);
-    if (isTokenTaken) {
-        alert(`Token ${tokenToUse} is already active! Please pick another.`);
-        return;
-    }
+    if (!tokenToUse || isNaN(tokenToUse)) { alert("Invalid Token!"); return; }
+    if (orders.some(o => o.token === tokenToUse)) { alert(`Token ${tokenToUse} taken.`); return; }
 
     let method = typeof paymentData === 'string' ? paymentData : paymentData?.paymentMethod;
-    
     const payload = {
       paymentMethod: method.toLowerCase(),
       token: tokenToUse,
@@ -202,45 +171,27 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
       financials: { subtotal: cartSubtotal, discount: Number(discount), taxRate, taxAmount, finalPayable: grandTotal }
     };
 
-    console.log("Sending Order Payload:", payload);
-
     try {
       const res = await fetch(`${API_URL}/orders`, { 
           method: "POST", 
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, 
           body: JSON.stringify(payload) 
       });
-      
       const result = await res.json();
-      
-      if (!res.ok) {
-          throw new Error(result.message || "Payment Failed");
-      }
+      if (!res.ok) throw new Error(result.message || "Failed");
 
-      // Handle Success Response
       if (method.toLowerCase() === 'upi' && result.upi?.qr) {
-          setActiveUpiData(result.upi); // Keep modal open for UPI QR
+          setActiveUpiData(result.upi);
       } else {
-          handleOrderSuccess(result.orderId); // Close modal immediately for Cash/Card
+          setOrders(p => [...p, { id: result.orderId || Date.now(), token: selectedToken, items: cart, startedAt: Date.now() }]);
+          setCart([]); setDiscount(0); setShowCheckout(false); setActiveUpiData(null);
+          fetchActiveOrders();
       }
-
-    } catch (e) { 
-        console.error("Order failed:", e); 
-        alert(`Order Failed: ${e.message}`);
-        setShowCheckout(false); // Force close modal on error to prevent stuck state
-    }
-  };
-
-  const handleOrderSuccess = (orderId) => {
-    // Optimistic Update
-    setOrders(p => [...p, { id: orderId || Date.now(), token: selectedToken, items: cart, startedAt: Date.now() }]);
-    setCart([]); setDiscount(0); setShowCheckout(false); setActiveUpiData(null);
-    localStorage.removeItem("pos_cart"); 
-    fetchActiveOrders(); 
+    } catch (e) { alert(e.message); setShowCheckout(false); }
   };
 
   const handleMarkReady = async (orderId) => {
-    if(!confirm("Mark this order as completed?")) return;
+    if(!confirm("Mark done?")) return;
     try {
         await fetch(`${API_URL}/orders/${orderId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
         setOrders(prev => prev.filter(o => o.id !== orderId));
@@ -248,52 +199,152 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
     } catch (e) { console.error("Mark ready failed", e); }
   };
 
-
-  // --- RENDER ---
-  const bgMain = isDarkMode ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-900";
-  const bgCard = isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-slate-200";
-  const bgInput = isDarkMode ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-200 text-slate-900";
-  const textSub = isDarkMode ? "text-slate-400" : "text-slate-500";
-  const tableHeader = isDarkMode ? "bg-slate-800 border-slate-700 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500";
-  const tableRow = isDarkMode ? "hover:bg-slate-800/50 border-slate-700" : "hover:bg-slate-50 border-slate-200";
-
+  // ------------------------------------------------------------------
+  // 🔴 ADMIN VIEW (SIDEBAR FIXED)
+  // ------------------------------------------------------------------
   if (userRole === 'admin') {
     return (
-        <div className={`min-h-screen flex font-sans transition-colors duration-300 ${bgMain}`}>
-            <div className="flex flex-1 overflow-hidden">
-                <div className={`w-64 flex flex-col p-6 ${isDarkMode ? 'bg-black border-r border-slate-800' : 'bg-slate-900'} text-white`}>
-                    <h1 className="text-2xl font-black mb-10 flex items-center gap-2"><Settings className="text-blue-500" /> Admin</h1>
-                    <nav className="flex-1 space-y-2">
-                        <button onClick={() => setActiveTab('menu')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'menu' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-white/10'}`}><Coffee size={20}/> Menu</button>
-                        <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'users' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-white/10'}`}><User size={20}/> Staff</button>
-                        <button onClick={() => setSettingsOpen(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-slate-400 hover:bg-white/10"><Settings size={20}/> Settings</button>
-                    </nav>
-                    <button onClick={onToggleTheme} className="flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-yellow-400 hover:bg-white/10 mb-2">{isDarkMode ? <><Sun size={20}/> Light Mode</> : <><Moon size={20}/> Dark Mode</>}</button>
-                    <button onClick={onLogout} className="flex items-center gap-2 text-red-400 font-bold mt-auto px-4 py-2 hover:bg-white/10 rounded-lg"><LogOut size={18}/> Logout</button>
+        <div className={`h-screen flex font-sans overflow-hidden ${isDarkMode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-900'}`}>
+            {/* SIDEBAR */}
+            <div className={`w-64 flex flex-col p-6 border-r z-20 shadow-xl ${isDarkMode ? 'bg-black border-slate-800' : 'bg-white border-slate-200'}`}>
+                <h1 className="text-2xl font-black mb-8 flex items-center gap-2 text-blue-600"><Settings /> Admin Panel</h1>
+                
+                <nav className="flex-1 space-y-2 overflow-y-auto">
+                    <button onClick={() => setActiveTab('menu')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'menu' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10'}`}>
+                        <Coffee size={20}/> Menu
+                    </button>
+                    {/* ✅ USERS BUTTON */}
+                    <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'users' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10'}`}>
+                        <User size={20}/> Staff
+                    </button>
+                    <button onClick={() => setSettingsOpen(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10">
+                        <Settings size={20}/> Settings
+                    </button>
+                </nav>
+
+                <div className="mt-auto pt-4 border-t border-slate-700/50 space-y-2">
+                    {/* ✅ THEME BUTTON */}
+                    <button onClick={onToggleTheme} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${isDarkMode ? 'text-yellow-400 hover:bg-white/10' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        {isDarkMode ? <><Sun size={20}/> Light Mode</> : <><Moon size={20}/> Dark Mode</>}
+                    </button>
+                    {/* ✅ LOGOUT BUTTON */}
+                    <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl">
+                        <LogOut size={20}/> Logout
+                    </button>
                 </div>
-                <div className="flex-1 p-8 overflow-y-auto">
-                    {activeTab === 'menu' && (
-                        <div className="max-w-5xl mx-auto">
-                            <div className="flex justify-between items-center mb-6"><h2 className="text-3xl font-black">Menu</h2><button onClick={() => setIsAddingItem(true)} className="bg-blue-600 text-white px-5 py-2 rounded-xl font-bold flex gap-2"><Plus size={20}/> Add</button></div>
-                            {isAddingItem && (<div className={`p-6 rounded-2xl shadow-lg mb-6 border ${bgCard}`}><div className="grid grid-cols-3 gap-4 mb-4"><input placeholder="Name" className={`border p-3 rounded-xl ${bgInput}`} value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} /><input placeholder="Price" className={`border p-3 rounded-xl ${bgInput}`} value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} /><input placeholder="Category" className={`border p-3 rounded-xl ${bgInput}`} value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} /></div><div className="flex gap-2 justify-end"><button onClick={() => setIsAddingItem(false)} className={`px-4 py-2 rounded-lg font-bold ${isDarkMode ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'}`}>Cancel</button><button onClick={handleAdminAddProduct} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Save</button></div></div>)}
-                            <div className={`rounded-2xl shadow-sm border overflow-hidden ${bgCard}`}><table className="w-full text-left"><thead className={`border-b ${tableHeader}`}><tr><th className="p-4">Name</th><th className="p-4">Category</th><th className="p-4">Price</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{rawProducts.map(p => (<tr key={p.id} className={`border-b ${tableRow}`}>{editingId === p.id ? (<><td className="p-4"><input className={`border p-1 w-full rounded ${bgInput}`} value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})}/></td><td className="p-4"><input className={`border p-1 w-full rounded ${bgInput}`} value={editForm.category} onChange={e => setEditForm({...editForm, category: e.target.value})}/></td><td className="p-4"><input className={`border p-1 w-full rounded ${bgInput}`} value={editForm.price} onChange={e => setEditForm({...editForm, price: e.target.value})}/></td><td className="p-4 text-right"><button onClick={() => handleAdminSaveProduct(p.id)} className="text-green-500 mr-2"><Save/></button><button onClick={() => setEditingId(null)} className="text-slate-400"><X/></button></td></>) : (<><td className="p-4 font-bold">{p.name}</td><td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold uppercase ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{p.category}</span></td><td className="p-4">₹{p.price}</td><td className="p-4 text-right"><button onClick={() => { setEditingId(p.id); setEditForm(p); }} className="text-blue-500 mr-2 hover:bg-blue-500/10 p-2 rounded"><Edit/></button><button onClick={() => handleAdminDeleteProduct(p.id)} className="text-red-500 hover:bg-red-500/10 p-2 rounded"><Trash2/></button></td></>)}</tr>))}</tbody></table></div>
-                        </div>
-                    )}
-                    {activeTab === 'users' && (
-                        <div className="max-w-5xl mx-auto">
-                            <h2 className="text-3xl font-black mb-6">Staff</h2>
-                            <div className={`p-6 rounded-2xl shadow-sm border mb-8 ${bgCard}`}><div className="grid grid-cols-4 gap-4 items-end"><div><label className={`text-xs font-bold ${textSub}`}>Email</label><input className={`w-full border p-2 rounded ${bgInput}`} value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} /></div><div><label className={`text-xs font-bold ${textSub}`}>Password</label><input className={`w-full border p-2 rounded ${bgInput}`} type="password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} /></div><div><label className={`text-xs font-bold ${textSub}`}>Role</label><select className={`w-full border p-2 rounded ${bgInput}`} value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}><option value="cashier">Cashier</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div><button onClick={handleAdminAddUser} className="bg-blue-600 text-white p-2 rounded font-bold">Create</button></div></div>
-                            <div className="grid grid-cols-3 gap-4">{usersList.map(u => (<div key={u.id} className={`p-5 rounded-2xl border flex justify-between items-center ${bgCard}`}><div className="flex items-center gap-4"><div className="bg-blue-500/10 p-3 rounded-full text-blue-500"><User size={20}/></div><div><p className="font-bold">{u.email}</p><p className={`text-xs font-black uppercase ${textSub}`}>{u.role}</p></div></div><button onClick={() => handleAdminDeleteUser(u.id)} className="text-red-400 hover:bg-red-500/10 p-2 rounded"><Trash2 size={20}/></button></div>))}</div>
-                        </div>
-                    )}
-                </div>
-                <AdminSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
             </div>
+
+            {/* MAIN CONTENT AREA */}
+            <div className="flex-1 p-8 overflow-y-auto relative">
+                
+                {/* MENU TAB */}
+                {activeTab === 'menu' && (
+                    <div className="max-w-5xl mx-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-3xl font-black">Menu Management</h2>
+                            <button onClick={() => setIsAddingItem(true)} className="bg-blue-600 text-white px-5 py-2 rounded-xl font-bold flex gap-2 hover:bg-blue-500 shadow-lg shadow-blue-500/30"><Plus size={20}/> Add Item</button>
+                        </div>
+                        
+                        {isAddingItem && (
+                            <div className={`p-6 rounded-2xl shadow-lg mb-6 border animate-in fade-in zoom-in-95 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                <h3 className="font-bold mb-4">New Product</h3>
+                                <div className="grid grid-cols-3 gap-4 mb-6">
+                                    <input placeholder="Name (e.g. Burger)" className={`border p-3 rounded-xl font-bold ${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50'}`} value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} />
+                                    <input placeholder="Price (e.g. 150)" type="number" className={`border p-3 rounded-xl font-bold ${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50'}`} value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} />
+                                    <input placeholder="Category (e.g. Food)" className={`border p-3 rounded-xl font-bold ${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50'}`} value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} />
+                                </div>
+                                <div className="flex gap-3 justify-end">
+                                    <button onClick={() => setIsAddingItem(false)} className="px-6 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100">Cancel</button>
+                                    <button onClick={handleAdminAddProduct} className="bg-blue-600 text-white px-8 py-2 rounded-lg font-bold hover:bg-blue-500">Save Product</button>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className={`rounded-2xl shadow-sm border overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                            <table className="w-full text-left">
+                                <thead className={`border-b ${isDarkMode ? 'bg-slate-700/50 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                                    <tr><th className="p-4 pl-6">Name</th><th className="p-4">Category</th><th className="p-4">Price</th><th className="p-4 text-right pr-6">Actions</th></tr>
+                                </thead>
+                                <tbody>
+                                    {rawProducts.map(p => (
+                                        <tr key={p.id} className={`border-b transition-colors ${isDarkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-slate-100 hover:bg-slate-50'}`}>
+                                            <td className="p-4 pl-6 font-bold">{p.name}</td>
+                                            <td className="p-4"><span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wide ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{p.category}</span></td>
+                                            <td className="p-4 font-mono text-blue-500 font-bold">₹{p.price}</td>
+                                            <td className="p-4 text-right pr-6">
+                                                <button onClick={() => handleAdminDeleteProduct(p.id)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={18}/></button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {/* USERS TAB */}
+                {activeTab === 'users' && (
+                    <div className="max-w-4xl mx-auto">
+                        <h2 className="text-3xl font-black mb-8">Staff Management</h2>
+                        
+                        {/* Add User Form */}
+                        <div className={`p-6 rounded-2xl shadow-sm border mb-8 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                            <h3 className="font-bold mb-4 flex items-center gap-2"><Plus className="text-blue-500"/> Add New User</h3>
+                            <div className="grid grid-cols-4 gap-4 items-end">
+                                <div className="col-span-1">
+                                    <label className="text-xs font-bold uppercase opacity-50 mb-1 block">Email</label>
+                                    <input className={`w-full border p-2.5 rounded-lg font-bold ${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50'}`} value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
+                                </div>
+                                <div className="col-span-1">
+                                    <label className="text-xs font-bold uppercase opacity-50 mb-1 block">Password</label>
+                                    <input className={`w-full border p-2.5 rounded-lg font-bold ${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50'}`} type="password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                                </div>
+                                <div className="col-span-1">
+                                    <label className="text-xs font-bold uppercase opacity-50 mb-1 block">Role</label>
+                                    <select className={`w-full border p-2.5 rounded-lg font-bold ${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-slate-50'}`} value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
+                                        <option value="cashier">Cashier</option>
+                                        <option value="manager">Manager</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                </div>
+                                <button onClick={handleAdminAddUser} className="col-span-1 bg-blue-600 text-white p-2.5 rounded-lg font-bold hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/30">Create Account</button>
+                            </div>
+                        </div>
+
+                        {/* Users List Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {usersList.length === 0 ? (
+                                <div className="col-span-2 text-center py-10 opacity-50 border-2 border-dashed rounded-xl">No staff accounts found.</div>
+                            ) : (
+                                usersList.map(u => (
+                                    <div key={u.id} className={`p-5 rounded-2xl border flex justify-between items-center group ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-slate-500' : 'bg-white border-slate-200 hover:border-blue-300'} transition-all`}>
+                                        <div className="flex items-center gap-4">
+                                            <div className={`p-3 rounded-xl ${isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
+                                                <User size={24}/>
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-lg">{u.email}</p>
+                                                <p className="text-xs font-black uppercase tracking-wider opacity-50">{u.role}</p>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => handleAdminDeleteUser(u.id)} className="p-3 text-red-400 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all">
+                                            <Trash2 size={20}/>
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+            <AdminSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
         </div>
     );
   }
 
-  // --- CASHIER VIEW ---
+  // ------------------------------------------------------------------
+  // 🟢 CASHIER VIEW
+  // ------------------------------------------------------------------
   return (
     <div className={`h-screen overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
       <div className="flex-1 overflow-hidden relative">
