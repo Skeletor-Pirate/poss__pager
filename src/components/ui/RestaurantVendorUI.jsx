@@ -5,7 +5,7 @@ import AdminSettingsModal from './AdminSettingsModal';
 import { LogOut, Plus, Trash2, Edit, Save, User, Coffee, Settings, Moon, Sun } from 'lucide-react';
 
 export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme }) {
-  const API_URL = "http://localhost:3000";
+  const API_URL = import.meta.env.VITE_API_URL;
   const token = localStorage.getItem("auth_token");
   const isMounted = useRef(false);
 

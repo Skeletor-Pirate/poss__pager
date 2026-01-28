@@ -1,18 +1,20 @@
 const mysql = require("mysql2");
 
-// Create normal pool (for callback-style code)
 const pool = mysql.createPool({
-  host: "127.0.0.1",
-  user: "root",
-  password: "323112rm",
-  database: "pos_db",
-  port: 3306,
+  host: process.env.DB_HOST || "127.0.0.1",
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "323112rm",
+  database: process.env.DB_NAME || "pos_db",
+  port: process.env.DB_PORT || 3306,
+
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
-});
+  queueLimit: 0,
 
-// Also expose promise version (for async/await code)
-pool.promise = () => pool.promise();
+  // Required for Railway SSL connection
+  ssl: process.env.DB_SSL === "true"
+    ? { rejectUnauthorized: false }
+    : undefined
+});
 
 module.exports = pool;
