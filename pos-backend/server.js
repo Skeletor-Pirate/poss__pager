@@ -25,6 +25,9 @@ app.use('/orders', authMiddleware, orderRoutes);
 app.use('/products', authMiddleware, productRoutes);
 app.use('/settings', authMiddleware, settingsRoutes);
 
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
 // --- Start Server ---
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
