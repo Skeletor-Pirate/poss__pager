@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { User, Lock, Loader, Moon, Sun, AtSign } from 'lucide-react';
 
 export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLogin, setIsLogin] = useState(true); // Default to Login mode
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -12,7 +12,8 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const API_URL = import.meta.env.VITE_API_URL;
+  // Ensure API_URL is defined (fallback for safety)
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,7 +22,7 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
 
     const endpoint = isLogin ? '/auth/login' : '/auth/signup';
 
-    // For login, only send email + password
+    // Prepare data: Login needs only email/pass; Signup needs everything
     const payload = isLogin
       ? { email: formData.email, password: formData.password }
       : formData;
@@ -37,10 +38,13 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
       if (!res.ok) throw new Error(data.message || 'Request failed');
 
       if (isLogin) {
+        // Success: Call parent login handler
         onLogin(data.user, data.token);
       } else {
+        // Success: Switch to login view
         alert("Account created! Please log in.");
         setIsLogin(true);
+        setFormData(prev => ({ ...prev, password: '' })); // Clear password for safety
       }
 
     } catch (err) {
@@ -50,7 +54,7 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
     }
   };
 
-  // Theme classes
+  // Dynamic Styles
   const bgClass = isDarkMode ? "bg-slate-900" : "bg-slate-100";
   const cardClass = isDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-slate-200";
   const textMain = isDarkMode ? "text-white" : "text-slate-800";
@@ -62,14 +66,15 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
   return (
     <div className={`min-h-screen flex items-center justify-center p-4 ${bgClass}`}>
       
+      {/* Theme Toggle Button */}
       <button 
         onClick={onToggleTheme} 
-        className={`absolute top-6 right-6 p-3 rounded-full shadow-lg ${isDarkMode ? 'bg-slate-800 text-yellow-400' : 'bg-white text-slate-600'}`}
+        className={`absolute top-6 right-6 p-3 rounded-full shadow-lg transition-all ${isDarkMode ? 'bg-slate-800 text-yellow-400' : 'bg-white text-slate-600'}`}
       >
         {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
       </button>
 
-      <div className={`p-8 rounded-2xl shadow-xl w-full max-w-md border ${cardClass}`}>
+      <div className={`p-8 rounded-2xl shadow-2xl w-full max-w-md border ${cardClass} transition-colors duration-300`}>
         <div className="text-center mb-8">
           <h1 className={`text-3xl font-black mb-2 ${textMain}`}>
             {isLogin ? 'Welcome Back' : 'Create Account'}
@@ -78,22 +83,23 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
         </div>
 
         {error && (
-          <div className="bg-red-500/10 text-red-500 p-3 rounded-lg mb-4 text-sm font-bold text-center border border-red-500/20">
+          <div className="bg-red-500/10 text-red-500 p-3 rounded-lg mb-4 text-sm font-bold text-center border border-red-500/20 animate-in fade-in zoom-in-95">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
 
-          {/* Username only during signup */}
+          {/* ✅ USERNAME FIELD (Only shows in Signup mode) */}
           {!isLogin && (
-            <div>
+            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
               <label className={`block text-xs font-bold uppercase mb-1 ${textSub}`}>Username</label>
-              <div className="relative">
-                <User className={`absolute left-3 top-3 ${textSub}`} size={20} />
+              <div className="relative group">
+                <User className={`absolute left-3 top-3.5 transition-colors ${isDarkMode ? 'text-slate-400 group-focus-within:text-blue-400' : 'text-slate-400 group-focus-within:text-blue-600'}`} size={20} />
                 <input 
-                  type="text" required
-                  className={`w-full pl-10 pr-4 py-3 border-2 rounded-xl ${inputBg}`}
+                  type="text" 
+                  required
+                  className={`w-full pl-10 pr-4 py-3 border-2 rounded-xl outline-none focus:border-blue-500 transition-all font-bold ${inputBg}`}
                   placeholder="john_doe"
                   value={formData.username}
                   onChange={e => setFormData({...formData, username: e.target.value})}
@@ -102,13 +108,14 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
             </div>
           )}
 
+          {/* Email Field */}
           <div>
             <label className={`block text-xs font-bold uppercase mb-1 ${textSub}`}>Email</label>
-            <div className="relative">
-              <AtSign className={`absolute left-3 top-3 ${textSub}`} size={20} />
+            <div className="relative group">
+              <AtSign className={`absolute left-3 top-3.5 transition-colors ${isDarkMode ? 'text-slate-400 group-focus-within:text-blue-400' : 'text-slate-400 group-focus-within:text-blue-600'}`} size={20} />
               <input 
                 type="email" required
-                className={`w-full pl-10 pr-4 py-3 border-2 rounded-xl ${inputBg}`}
+                className={`w-full pl-10 pr-4 py-3 border-2 rounded-xl outline-none focus:border-blue-500 transition-all font-bold ${inputBg}`}
                 placeholder="name@example.com"
                 value={formData.email}
                 onChange={e => setFormData({...formData, email: e.target.value})}
@@ -116,13 +123,14 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
             </div>
           </div>
 
+          {/* Password Field */}
           <div>
             <label className={`block text-xs font-bold uppercase mb-1 ${textSub}`}>Password</label>
-            <div className="relative">
-              <Lock className={`absolute left-3 top-3 ${textSub}`} size={20} />
+            <div className="relative group">
+              <Lock className={`absolute left-3 top-3.5 transition-colors ${isDarkMode ? 'text-slate-400 group-focus-within:text-blue-400' : 'text-slate-400 group-focus-within:text-blue-600'}`} size={20} />
               <input 
                 type="password" required
-                className={`w-full pl-10 pr-4 py-3 border-2 rounded-xl ${inputBg}`}
+                className={`w-full pl-10 pr-4 py-3 border-2 rounded-xl outline-none focus:border-blue-500 transition-all font-bold ${inputBg}`}
                 placeholder="••••••••"
                 value={formData.password}
                 onChange={e => setFormData({...formData, password: e.target.value})}
@@ -130,11 +138,12 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
             </div>
           </div>
 
+          {/* ✅ ROLE SELECTION (Only shows in Signup mode) */}
           {!isLogin && (
-            <div>
+            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
               <label className={`block text-xs font-bold uppercase mb-1 ${textSub}`}>Role</label>
               <select 
-                className={`w-full p-3 border-2 rounded-xl font-bold ${inputBg}`}
+                className={`w-full p-3 border-2 rounded-xl font-bold outline-none focus:border-blue-500 transition-all ${inputBg}`}
                 value={formData.role}
                 onChange={e => setFormData({...formData, role: e.target.value})}
               >
@@ -148,7 +157,7 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 flex justify-center items-center gap-2"
+            className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 flex justify-center items-center gap-2 transition-transform active:scale-[0.98]"
           >
             {loading && <Loader className="animate-spin" size={20} />}
             {isLogin ? 'Login to Dashboard' : 'Register New User'}
@@ -158,7 +167,7 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
         <div className="mt-6 text-center">
           <button 
             onClick={() => { setIsLogin(!isLogin); setError(''); }}
-            className={`${textSub} font-bold text-sm hover:text-blue-500`}
+            className={`${textSub} font-bold text-sm hover:text-blue-500 transition-colors`}
           >
             {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login"}
           </button>
