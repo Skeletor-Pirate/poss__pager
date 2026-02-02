@@ -1,23 +1,63 @@
 import React, { useState } from 'react';
 import { User, Lock, Loader, Moon, Sun, AtSign, Building2 } from 'lucide-react';
-import { getTheme, COMMON_STYLES, FONTS } from './theme';
 
+/* --- LOCAL STYLE CONFIGURATION (To ensure no crashes) --- */
+const FONTS = {
+  sans: '-apple-system, "Segoe UI", "Geist Sans", sans-serif',
+};
+
+const COMMON_STYLES = {
+  input: (isDarkMode) => `border px-3 py-2 rounded-md text-sm outline-none focus:border-neutral-400 transition-colors ${isDarkMode ? 'bg-black border-neutral-800 text-white placeholder:text-neutral-600' : 'bg-white border-neutral-200 text-black placeholder:text-neutral-400'}`,
+  select: (isDarkMode) => `border px-3 py-2 rounded-md text-sm outline-none appearance-none focus:border-neutral-400 cursor-pointer transition-colors ${isDarkMode ? 'bg-black border-neutral-800 text-white' : 'bg-white border-neutral-200 text-black'}`,
+  modal: (isDarkMode) => `rounded-2xl border shadow-2xl ${isDarkMode ? 'bg-black border-neutral-800' : 'bg-white border-neutral-200'}`,
+};
+
+const getTheme = (isDarkMode) => ({
+  bg: { main: isDarkMode ? 'bg-black' : 'bg-white', hover: isDarkMode ? 'hover:bg-neutral-900' : 'hover:bg-neutral-50' },
+  text: { main: isDarkMode ? 'text-white' : 'text-black', secondary: isDarkMode ? 'text-neutral-400' : 'text-neutral-600' },
+  button: { 
+    primary: isDarkMode ? 'bg-white text-black hover:bg-neutral-200' : 'bg-black text-white hover:bg-neutral-800', 
+    secondary: isDarkMode ? 'bg-neutral-900 text-white hover:bg-neutral-800' : 'bg-neutral-100 text-black hover:bg-neutral-200' 
+  },
+});
+
+/* --- MAIN COMPONENT --- */
 export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
   const [isLogin, setIsLogin] = useState(true); 
   const [formData, setFormData] = useState({ restaurantId: '', username: '', email: '', password: '', role: 'cashier' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // Use the API URL environment variable or default to localhost
   const API_URL = "http://localhost:3000";
+  
   const theme = getTheme(isDarkMode);
 
   const handleSubmit = async (e) => {
     e.preventDefault(); 
     setLoading(true); 
     setError('');
+
     const endpoint = isLogin ? '/auth/login' : '/auth/signup';
-    const payload = isLogin 
-      ? { email: formData.email, password: formData.password, restaurantId: formData.restaurantId } 
-      : formData;
+    
+    // --- BACKEND INTEGRATION LOGIC ---
+    let payload;
+    if (isLogin) {
+        // Login: Only needs email and password
+        payload = { 
+            email: formData.email, 
+            password: formData.password 
+        };
+    } else {
+        // Signup: Maps 'restaurantId' input -> 'restaurantName' for backend
+        payload = {
+            restaurantName: formData.restaurantId, 
+            username: formData.username,
+            email: formData.email,
+            password: formData.password
+            // Role is handled by backend (defaults to 'admin' for signup)
+        };
+    }
     
     try { 
       const res = await fetch(`${API_URL}${endpoint}`, { 
@@ -25,12 +65,17 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify(payload) 
       }); 
+      
       const data = await res.json(); 
-      if (!res.ok) throw new Error(data.message); 
-      if (isLogin) onLogin(data.user, data.token); 
-      else { 
-        alert("Account created!"); 
+      
+      if (!res.ok) throw new Error(data.message || "Request failed"); 
+      
+      if (isLogin) {
+        onLogin(data.user, data.token); 
+      } else { 
+        alert("Account created successfully! Please login."); 
         setIsLogin(true); 
+        setFormData(prev => ({...prev, password: ''})); // Clear password
       } 
     } catch (err) { 
       setError(err.message); 
@@ -63,14 +108,15 @@ export default function LoginView({ onLogin, isDarkMode, onToggleTheme }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className={`block text-xs font-medium uppercase mb-2 ${theme.text.secondary}`}>
-              Restaurant ID
+              {isLogin ? 'Restaurant ID (Optional)' : 'Restaurant Name'}
             </label>
             <div className="relative group">
               <Building2 className={`absolute left-3 top-3 ${theme.text.secondary}`} size={18} />
               <input 
-                required 
+                // Restaurant ID is not strictly needed for login in new backend, but kept for UI consistency
+                required={!isLogin}
                 className={`w-full pl-10 pr-4 py-2.5 ${COMMON_STYLES.input(isDarkMode)}`} 
-                placeholder="1" 
+                placeholder={isLogin ? "e.g. 1" : "My Awesome Restaurant"} 
                 value={formData.restaurantId} 
                 onChange={e => setFormData({...formData, restaurantId: e.target.value})} 
               />
