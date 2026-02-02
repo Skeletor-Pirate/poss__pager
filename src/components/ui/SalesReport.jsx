@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { Calendar, Download, TrendingUp, Banknote, Smartphone, Wallet, Receipt } from 'lucide-react';
+import { getTheme, COMMON_STYLES, FONTS } from './theme';
 
 export default function SalesReport({ orders = [], history = [], products = [], isDarkMode }) {
+  const theme = getTheme(isDarkMode);
   
   const getLocalDate = () => {
     if (typeof window === 'undefined') return new Date().toISOString().split('T')[0];
@@ -110,70 +112,74 @@ export default function SalesReport({ orders = [], history = [], products = [], 
     document.body.removeChild(link);
   };
 
-  const theme = {
-    bgCard: isDarkMode ? 'bg-black border-[#333]' : 'bg-white border-gray-200',
-    textMain: isDarkMode ? 'text-white' : 'text-black',
-    textSec: isDarkMode ? 'text-[#888]' : 'text-gray-600',
-    rowClass: isDarkMode 
-        ? 'border-[#333] text-white hover:bg-white/5' 
-        : 'border-gray-200 text-black hover:bg-gray-50',     
-  };
-
   return (
-    <div className={`flex flex-col h-full font-['Geist',_sans-serif] antialiased animate-in fade-in zoom-in-95 duration-300`}>
+    <div className={`flex flex-col h-full antialiased animate-in fade-in zoom-in-95 duration-300`} style={{ fontFamily: FONTS.sans }}>
         {/* HEADER */}
         <div className="flex justify-between items-center mb-6 shrink-0">
             <div>
-                <h1 className={`text-2xl font-semibold ${theme.textMain}`}>Dashboard</h1>
-                <p className={`text-sm font-medium ${theme.textSec}`}>Overview for {reportDate}</p>
+                <h1 className={`text-2xl font-semibold ${theme.text.main}`}>Dashboard</h1>
+                <p className={`text-sm ${theme.text.secondary}`}>Overview for {reportDate}</p>
             </div>
             
             <div className="flex gap-3">
-                <div className={`relative flex items-center gap-2 px-4 py-2 rounded-lg border ${theme.bgCard} ${theme.textMain}`}>
-                    <Calendar size={18} className={theme.textSec}/>
-                    <span className="font-medium text-sm">{reportDate}</span>
-                    <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/>
+                <div className={`relative flex items-center gap-2 px-4 py-2 rounded-lg border ${COMMON_STYLES.card(isDarkMode)}`}>
+                    <Calendar size={18} className={theme.text.secondary}/>
+                    <span className={`text-sm ${theme.text.main}`}>{reportDate}</span>
+                    <input 
+                        type="date" 
+                        value={reportDate} 
+                        onChange={(e) => setReportDate(e.target.value)} 
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
                 </div>
-                <button onClick={exportData} className={`px-4 py-2 rounded-lg border ${theme.bgCard} ${theme.textMain} flex items-center gap-2 hover:border-white/20 transition-all active:scale-[0.98]`}>
-                    <Download size={18}/> <span className="font-medium text-sm">Export CSV</span>
+                <button 
+                    onClick={exportData} 
+                    className={`px-4 py-2 rounded-lg border flex items-center gap-2 transition-all ${theme.button.secondary}`}
+                >
+                    <Download size={18}/> <span className="text-sm">Export CSV</span>
                 </button>
             </div>
         </div>
 
         {/* METRICS */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-6 shrink-0">
-            <div className={`p-5 rounded-xl border ${theme.bgCard}`}>
-                <div className={`flex items-center gap-2 mb-2 ${theme.textSec}`}><Wallet size={16}/><span className="text-xs font-medium uppercase">Revenue</span></div>
-                <div className={`text-2xl font-semibold ${theme.textMain}`}>₹{totalRevenue}</div>
-            </div>
-            <div className={`p-5 rounded-xl border ${theme.bgCard}`}>
-                <div className={`flex items-center gap-2 mb-2 ${theme.textSec}`}><Receipt size={16}/><span className="text-xs font-medium uppercase">Tax</span></div>
-                <div className={`text-2xl font-semibold ${theme.textMain}`}>₹{Math.round(totalTax)}</div>
-            </div>
-            <div className={`p-5 rounded-xl border ${theme.bgCard}`}>
-                <div className={`flex items-center gap-2 mb-2 ${theme.textSec}`}><Smartphone size={16}/><span className="text-xs font-medium uppercase">Digital</span></div>
-                <div className={`text-2xl font-semibold ${theme.textMain}`}>₹{totalDigital}</div>
-            </div>
-            <div className={`p-5 rounded-xl border ${theme.bgCard}`}>
-                <div className={`flex items-center gap-2 mb-2 ${theme.textSec}`}><Banknote size={16}/><span className="text-xs font-medium uppercase">Cash</span></div>
-                <div className={`text-2xl font-semibold ${theme.textMain}`}>₹{totalCash}</div>
-            </div>
-            <div className={`p-5 rounded-xl border ${theme.bgCard}`}>
-                <div className={`flex items-center gap-2 mb-2 ${theme.textSec}`}><TrendingUp size={16}/><span className="text-xs font-medium uppercase">Orders</span></div>
-                <div className={`text-2xl font-semibold ${theme.textMain}`}>{filteredOrders.length}</div>
-            </div>
+            {[
+                { icon: Wallet, label: 'Revenue', value: `₹${totalRevenue}` },
+                { icon: Receipt, label: 'Tax', value: `₹${Math.round(totalTax)}` },
+                { icon: Smartphone, label: 'Digital', value: `₹${totalDigital}` },
+                { icon: Banknote, label: 'Cash', value: `₹${totalCash}` },
+                { icon: TrendingUp, label: 'Orders', value: filteredOrders.length }
+            ].map((metric, idx) => (
+                <div key={idx} className={`p-5 rounded-xl border ${COMMON_STYLES.card(isDarkMode)}`}>
+                    <div className={`flex items-center gap-2 mb-2 ${theme.text.secondary}`}>
+                        <metric.icon size={16}/>
+                        <span className="text-xs font-medium uppercase">{metric.label}</span>
+                    </div>
+                    <div className={`text-2xl font-semibold ${theme.text.main}`}>{metric.value}</div>
+                </div>
+            ))}
         </div>
 
         {/* GRAPH */}
-        <div className={`mb-6 rounded-xl border ${theme.bgCard} p-6 shrink-0`}>
-            <div className="flex items-center gap-2 mb-6"><TrendingUp size={20} className={theme.textSec}/><h2 className={`font-semibold ${theme.textMain}`}>Hourly Activity</h2></div>
-            <div className="custom-scrollbar overflow-x-auto pb-2">
+        <div className={`mb-6 rounded-xl border p-6 shrink-0 ${COMMON_STYLES.card(isDarkMode)}`}>
+            <div className="flex items-center gap-2 mb-6">
+                <TrendingUp size={20} className={theme.text.secondary}/>
+                <h2 className={`font-semibold ${theme.text.main}`}>Hourly Activity</h2>
+            </div>
+            <div className="overflow-x-auto pb-2">
                 <div className="h-40 flex gap-3 items-end min-w-[600px] md:min-w-0">
                     {chartData.map((val, h) => (
                         <div key={h} className="flex-1 flex flex-col justify-end items-center group relative h-full">
-                            {val > 0 && <div className={`absolute bottom-full mb-2 ${isDarkMode ? 'bg-white text-black' : 'bg-black text-white'} text-xs py-1 px-2 rounded font-medium z-10`}>₹{val}</div>}
-                            <div className={`w-full rounded-t-lg transition-all duration-500 ${val > 0 ? (isDarkMode ? 'bg-white' : 'bg-black') : (isDarkMode ? 'bg-white/10' : 'bg-gray-200')}`} style={{height: `${(val / maxSales) * 100}%`, minHeight: '4px'}}></div>
-                            <span className={`text-[10px] font-medium ${theme.textSec} mt-2`}>{h}:00</span>
+                            {val > 0 && (
+                                <div className={`absolute bottom-full mb-2 px-2 py-1 rounded text-xs z-10 ${isDarkMode ? 'bg-white text-black' : 'bg-black text-white'}`}>
+                                    ₹{val}
+                                </div>
+                            )}
+                            <div 
+                                className={`w-full rounded-t transition-all duration-500 ${val > 0 ? (isDarkMode ? 'bg-white' : 'bg-black') : theme.bg.subtle}`} 
+                                style={{height: `${(val / maxSales) * 100}%`, minHeight: '4px'}}
+                            />
+                            <span className={`text-[10px] ${theme.text.secondary} mt-2`}>{h}:00</span>
                         </div>
                     ))}
                 </div>
@@ -181,13 +187,13 @@ export default function SalesReport({ orders = [], history = [], products = [], 
         </div>
 
         {/* HISTORY */}
-        <div className={`flex-1 overflow-hidden rounded-xl border ${theme.bgCard} flex flex-col`}>
-            <div className={`p-4 border-b ${isDarkMode ? 'border-[#333]' : 'border-gray-200'} font-semibold flex items-center gap-2 ${theme.textMain}`}>
-                <Banknote size={20} className={theme.textSec}/> Transaction History
+        <div className={`flex-1 overflow-hidden rounded-xl border flex flex-col ${COMMON_STYLES.card(isDarkMode)}`}>
+            <div className={`p-4 border-b font-semibold flex items-center gap-2 ${theme.border.default} ${theme.text.main}`}>
+                <Banknote size={20} className={theme.text.secondary}/> Transaction History
             </div>
             <div className="flex-1 overflow-y-auto p-2">
                 <table className="w-full text-sm text-left border-collapse">
-                    <thead className={`${theme.textSec} text-xs uppercase sticky top-0 ${isDarkMode ? 'bg-black' : 'bg-white'} z-10`}>
+                    <thead className={`text-xs uppercase sticky top-0 z-10 ${COMMON_STYLES.tableHeader(isDarkMode)} ${theme.bg.main}`}>
                         <tr>
                             <th className="p-3 pl-4 font-medium">ID</th>
                             <th className="p-3 font-medium">Time</th>
@@ -197,22 +203,36 @@ export default function SalesReport({ orders = [], history = [], products = [], 
                             <th className="p-3 text-right pr-4 font-medium">Total</th>
                         </tr>
                     </thead>
-                    <tbody className={`divide-y ${isDarkMode ? 'divide-[#333]' : 'divide-gray-100'}`}>
+                    <tbody>
                         {filteredOrders.length === 0 ? (
-                            <tr><td colSpan="6" className={`p-8 text-center font-medium ${theme.textSec}`}>No transactions today.</td></tr>
+                            <tr>
+                                <td colSpan="6" className={`p-8 text-center ${theme.text.secondary}`}>
+                                    No transactions today.
+                                </td>
+                            </tr>
                         ) : (
                             filteredOrders.map(o => (
-                                <tr key={o.id} className={`border-b transition-colors cursor-default ${theme.rowClass}`}>
-                                    <td className="p-3 pl-4 font-mono font-medium opacity-70">#{String(o.id).slice(-4)}</td>
-                                    <td className="p-3 font-medium">{new Date(o.activeDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                                <tr key={o.id} className={`${COMMON_STYLES.tableRow(isDarkMode)}`}>
+                                    <td className={`p-3 pl-4 font-mono text-xs ${theme.text.tertiary}`}>
+                                        #{String(o.id).slice(-4)}
+                                    </td>
                                     <td className="p-3">
-                                        <span className={`px-2 py-1 rounded text-xs font-medium uppercase ${o.method === 'CASH' ? 'bg-white/10 text-white border border-white/10' : 'bg-white/10 text-white border border-white/10'}`}>
+                                        {new Date(o.activeDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                                    </td>
+                                    <td className="p-3">
+                                        <span className={`${COMMON_STYLES.badge(isDarkMode)} uppercase`}>
                                             {o.method}
                                         </span>
                                     </td>
-                                    <td className="p-3 text-right text-[#888]">{o.discount > 0 ? `-${o.discount}` : '-'}</td>
-                                    <td className="p-3 text-right text-[#888]">{o.tax > 0 ? o.tax : '-'}</td>
-                                    <td className="p-3 pr-4 text-right font-semibold">{o.amount}</td>
+                                    <td className={`p-3 text-right ${theme.text.secondary}`}>
+                                        {o.discount > 0 ? `-${o.discount}` : '-'}
+                                    </td>
+                                    <td className={`p-3 text-right ${theme.text.secondary}`}>
+                                        {o.tax > 0 ? o.tax : '-'}
+                                    </td>
+                                    <td className="p-3 pr-4 text-right font-semibold">
+                                        {o.amount}
+                                    </td>
                                 </tr>
                             ))
                         )}

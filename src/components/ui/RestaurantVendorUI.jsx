@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { LogOut, LayoutDashboard, Coffee, Settings, User, Bell, Plus, Trash2, Box, ChevronDown, X as XIcon } from 'lucide-react';
+import { LogOut, LayoutDashboard, Coffee, Settings, User, Sun, Moon, Bell, Plus, Trash2, Box, ChevronDown, X as XIcon } from 'lucide-react';
+import { getTheme, COMMON_STYLES, FONTS } from './theme';
 import POSView from './POSView';
 import CheckoutModal from './CheckoutModal';
 import SalesReport from './SalesReport';
 import AdminSettingsModal from './AdminSettingsModal';
 import ActiveOrdersDrawer from './ActiveOrdersDrawer';
-import { getTheme, COMMON_STYLES, FONTS } from './theme';
 
 export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme, API_URL = "http://localhost:3000" }) {
-  
-  const token = localStorage.getItem("auth_token");
   const theme = getTheme(isDarkMode);
+  const token = localStorage.getItem("auth_token");
 
   // Helpers
   const getRestaurantId = () => user?.restaurantId || user?.user?.restaurantId || user?.restaurant_id || 1;
@@ -240,15 +239,15 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
     <div className={`flex h-screen overflow-hidden ${theme.bg.main} ${theme.text.main}`} style={{ fontFamily: FONTS.sans }}>
       
       {/* SIDEBAR */}
-      <aside className={`w-20 lg:w-64 flex flex-col border-r shadow-2xl z-20 ${theme.border.default}`}>
-         <div className="p-6 flex items-center gap-3 justify-center lg:justify-start">
-             <div className="bg-orange-600 p-2 rounded-xl shadow-lg shadow-orange-900/20">
-                 <Settings className="text-white animate-spin-slow" size={24} />
+      <aside className={`w-20 lg:w-64 flex flex-col p-6 border-r ${theme.border.default} ${theme.bg.card}`}>
+         <div className="flex items-center gap-3 justify-center lg:justify-start mb-8">
+             <div className={`p-2 rounded-xl ${theme.bg.subtle}`}>
+                 <Settings size={24} />
              </div>
-             <h1 className="hidden lg:block text-2xl font-black tracking-tight">POS<span className="text-orange-500">Pro</span></h1>
+             <h1 className="hidden lg:block text-xl font-semibold">POSPro</h1>
          </div>
 
-         <nav className="flex-1 px-3 space-y-2 mt-4">
+         <nav className="flex-1 space-y-1 overflow-y-auto">
              {[
                { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', role: 'admin' },
                { id: 'menu', icon: Coffee, label: 'Menu' },
@@ -259,49 +258,70 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
                  <button 
                     key={item.id}
                     onClick={() => item.action ? item.action() : setActiveTab(item.id)}
-                    className={`w-full flex items-center gap-4 p-3 rounded-2xl font-bold transition-all duration-300 group outline-none ${
-                        activeTab === item.id && !item.action 
-                        ? `${theme.button.secondary} border ${theme.border.default}` 
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors outline-none
+                    ${activeTab === item.id && !item.action 
+                        ? theme.bg.active + ' ' + theme.text.main
                         : theme.button.ghost
                     }`}
                  >
-                    <item.icon size={22} className={activeTab === item.id ? "text-orange-500" : ""} />
+                    <item.icon size={18} />
                     <span className="hidden lg:block">{item.label}</span>
-                    {item.id === 'kitchen' && orders.length > 0 && <span className="hidden lg:flex ml-auto bg-orange-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{orders.length}</span>}
+                    {item.id === 'kitchen' && orders.length > 0 && (
+                        <span className={`hidden lg:flex ml-auto ${COMMON_STYLES.badge(isDarkMode)} text-[10px]`}>
+                            {orders.length}
+                        </span>
+                    )}
                  </button>
                 )
              ))}
+             <button 
+                onClick={() => setSettingsOpen(true)}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors outline-none ${theme.button.ghost}`}
+             >
+                <Settings size={18}/>
+                <span className="hidden lg:block">Settings</span>
+             </button>
          </nav>
 
-         <div className={`p-4 mt-auto border-t ${theme.border.default}`}>
-             <button onClick={onLogout} className="w-full flex items-center gap-3 p-3 rounded-xl text-red-500 hover:bg-red-500/10 font-bold transition-all">
-                 <LogOut size={20} />
+         <div className={`mt-auto pt-6 border-t space-y-1 ${theme.border.default}`}>
+             <button 
+                onClick={onToggleTheme} 
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium outline-none transition-colors ${theme.button.ghost}`}
+             >
+                 {isDarkMode ? <><Sun size={18}/> <span className="hidden lg:block">Light</span></> : <><Moon size={18}/> <span className="hidden lg:block">Dark</span></>}
+             </button>
+             <button 
+                onClick={onLogout} 
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium outline-none transition-colors ${theme.button.ghost}`}
+             >
+                 <LogOut size={18} />
                  <span className="hidden lg:block">Logout</span>
              </button>
          </div>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
+      {/* MAIN CONTENT */}
       <main className={`flex-1 flex flex-col overflow-hidden ${theme.bg.main}`}>
-          {/* Header */}
-          <header className={`h-16 flex items-center justify-between px-8 border-b ${theme.border.default} ${theme.bg.main}`}>
-              <h2 className="text-xl font-black capitalize">
+          <header className={`h-16 flex items-center justify-between px-8 border-b ${theme.border.default} ${theme.bg.card}`}>
+              <h2 className="text-xl font-semibold capitalize">
                   {activeTab === 'dashboard' ? 'Overview' : activeTab === 'menu' ? 'Menu & Orders' : activeTab}
               </h2>
               <div className="flex items-center gap-4">
                   <div className="text-right hidden sm:block">
-                      <p className="text-sm font-bold">{user?.username || 'Admin'}</p>
-                      <p className={`text-xs uppercase font-bold tracking-wider ${theme.text.secondary}`}>{userRole}</p>
+                      <p className="text-sm font-medium">{user?.username || 'Admin'}</p>
+                      <p className={`text-xs uppercase font-medium tracking-wider ${theme.text.tertiary}`}>{userRole}</p>
                   </div>
-                  <div className={`h-10 w-10 rounded-full flex items-center justify-center border ${theme.border.default} ${theme.bg.subtle}`}>
-                      <User size={20} className={theme.text.secondary}/>
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center border ${theme.border.default} ${theme.bg.subtle}`}>
+                      <User size={16} className={theme.text.secondary}/>
                   </div>
               </div>
           </header>
 
           <div className="flex-1 overflow-y-auto p-0 relative">
               {activeTab === 'dashboard' && userRole === 'admin' && (
-                <SalesReport orders={orders} history={history} products={rawProducts} isDarkMode={isDarkMode} />
+                <div className="p-8">
+                    <SalesReport orders={orders} history={history} products={rawProducts} isDarkMode={isDarkMode} />
+                </div>
               )}
               
               {activeTab === 'menu' && (
@@ -312,7 +332,6 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
                     onAddToCart={addToCart} onRemoveFromCart={removeFromCart} onCheckout={() => setShowCheckout(true)}
                     isDarkMode={isDarkMode} discount={discount} setDiscount={setDiscount} taxRate={taxRate}
                     onConnectDock={connectDock} dockConnected={dockConnected} onCallCustomer={(t) => sendToDock(t)}
-                    // Admin props
                     userRole={userRole}
                     isAddingItem={isAddingItem}
                     setIsAddingItem={setIsAddingItem}
@@ -328,54 +347,87 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
 
               {activeTab === 'users' && userRole === 'admin' && (
                   <div className="max-w-4xl mx-auto p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <h2 className="text-3xl font-black mb-8">Staff Management</h2>
+                      <h2 className="text-2xl font-semibold mb-8">Staff Management</h2>
                       
                       {/* Add User */}
-                      <div className={`p-6 rounded-2xl shadow-xl border mb-8 ${COMMON_STYLES.card(isDarkMode)}`}>
-                          <h3 className="font-bold mb-4 flex items-center gap-2 text-blue-400"><Plus size={20}/> Add User</h3>
+                      <div className={`p-6 rounded-lg border mb-8 ${COMMON_STYLES.card(isDarkMode)}`}>
+                          <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${theme.text.main}`}>
+                              <Plus size={16} /> Add User
+                          </h3>
                           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                               <div className="col-span-1">
-                                  <label className={`text-xs font-bold uppercase opacity-50 mb-1 block ${theme.text.secondary}`}>Username</label>
-                                  <input className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} placeholder="john_doe"/>
+                                  <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Username</label>
+                                  <input 
+                                      className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} 
+                                      value={newUser.username} 
+                                      onChange={e => setNewUser({...newUser, username: e.target.value})} 
+                                      placeholder="john_doe"
+                                  />
                               </div>
                               <div className="col-span-1">
-                                  <label className={`text-xs font-bold uppercase opacity-50 mb-1 block ${theme.text.secondary}`}>Email</label>
-                                  <input className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} placeholder="email@pos.com"/>
+                                  <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Email</label>
+                                  <input 
+                                      className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} 
+                                      value={newUser.email} 
+                                      onChange={e => setNewUser({...newUser, email: e.target.value})} 
+                                      placeholder="email@pos.com"
+                                  />
                               </div>
                               <div className="col-span-1">
-                                  <label className={`text-xs font-bold uppercase opacity-50 mb-1 block ${theme.text.secondary}`}>Password</label>
-                                  <input className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} type="password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} placeholder="••••"/>
+                                  <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Password</label>
+                                  <input 
+                                      className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} 
+                                      type="password" 
+                                      value={newUser.password} 
+                                      onChange={e => setNewUser({...newUser, password: e.target.value})} 
+                                      placeholder="••••"
+                                  />
                               </div>
                               <div className="col-span-1 flex gap-2">
                                   <div className="flex-1">
-                                      <label className={`text-xs font-bold uppercase opacity-50 mb-1 block ${theme.text.secondary}`}>Role</label>
-                                      <select className={`w-full ${COMMON_STYLES.select(isDarkMode)}`} value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
+                                      <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Role</label>
+                                      <select 
+                                          className={`w-full ${COMMON_STYLES.select(isDarkMode)}`} 
+                                          value={newUser.role} 
+                                          onChange={e => setNewUser({...newUser, role: e.target.value})}
+                                      >
                                           <option value="cashier">Cashier</option>
                                           <option value="manager">Manager</option>
                                           <option value="admin">Admin</option>
                                       </select>
                                   </div>
-                                  <button onClick={handleAdminAddUser} className={`px-4 py-2.5 rounded-lg font-bold ${theme.button.primary}`}>Create</button>
+                                  <button 
+                                      onClick={handleAdminAddUser} 
+                                      className={`px-4 py-2 rounded-md text-sm font-medium transition-colors outline-none mt-auto ${theme.button.primary}`}
+                                  >
+                                      Create
+                                  </button>
                               </div>
                           </div>
                       </div>
-
+                      
                       {/* User List */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {usersList.map(u => (
-                              <div key={u.id} className={`p-5 rounded-2xl border flex justify-between items-center group transition-all ${COMMON_STYLES.card(isDarkMode)}`}>
+                              <div 
+                                  key={u.id} 
+                                  className={`p-5 rounded-lg border flex justify-between items-center group transition-colors ${COMMON_STYLES.card(isDarkMode)} ${theme.border.hover}`}
+                              >
                                   <div className="flex items-center gap-4">
-                                      <div className={`p-3 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20`}>
-                                          <User size={24}/>
+                                      <div className={`p-3 rounded-md ${theme.bg.subtle}`}>
+                                          <User size={20}/>
                                       </div>
                                       <div>
-                                          <p className="font-bold text-lg">{u.username || u.email.split('@')[0]}</p>
-                                          <p className={`text-xs font-black uppercase tracking-wider opacity-50 ${theme.text.secondary}`}>{u.role}</p>
-                                          <p className={`text-xs opacity-30 ${theme.text.secondary}`}>{u.email}</p>
+                                          <p className="font-medium text-sm">{u.username || u.email.split('@')[0]}</p>
+                                          <p className={`text-xs font-medium ${theme.text.tertiary}`}>{u.role}</p>
+                                          <p className={`text-xs ${theme.text.muted}`}>{u.email}</p>
                                       </div>
                                   </div>
-                                  <button onClick={() => handleAdminDeleteUser(u.id)} className="p-3 text-red-400 hover:bg-red-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all outline-none">
-                                      <Trash2 size={20}/>
+                                  <button 
+                                      onClick={() => handleAdminDeleteUser(u.id)} 
+                                      className={`p-2 rounded-md opacity-0 group-hover:opacity-100 transition-all outline-none ${theme.bg.hover}`}
+                                  >
+                                      <Trash2 size={16} className={theme.text.secondary}/>
                                   </button>
                               </div>
                           ))}
@@ -385,11 +437,34 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
           </div>
       </main>
 
-      <CheckoutModal isOpen={showCheckout} onClose={() => setShowCheckout(false)} onConfirm={finalizeOrder} cartSubtotal={cartSubtotal} taxAmount={taxAmount} discount={discount} grandTotal={grandTotal} orderId={orders.length + 1} isDarkMode={isDarkMode} upiId={settings.upiId} payeeName={settings.payeeName} backendUpiData={activeUpiData} />
-      
-      <ActiveOrdersDrawer isOpen={showActiveOrders} onClose={() => setShowActiveOrders(false)} orders={orders} onCompleteOrder={handleMarkReady} onCallCustomer={(t) => sendToDock(t)} isDarkMode={isDarkMode} />
-      
-      <AdminSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} API_URL={API_URL} restaurantId={getRestaurantId()} isDarkMode={isDarkMode} />
+      <CheckoutModal 
+          isOpen={showCheckout} 
+          onClose={() => setShowCheckout(false)} 
+          onConfirm={finalizeOrder} 
+          cartSubtotal={cartSubtotal} 
+          taxAmount={taxAmount} 
+          discount={discount} 
+          grandTotal={grandTotal} 
+          orderId={orders.length + 1} 
+          isDarkMode={isDarkMode} 
+          upiId={settings.upiId} 
+          payeeName={settings.payeeName} 
+          backendUpiData={activeUpiData} 
+      />
+      <ActiveOrdersDrawer 
+          isOpen={showActiveOrders} 
+          onClose={() => setShowActiveOrders(false)} 
+          orders={orders} 
+          onCompleteOrder={handleMarkReady} 
+          onCallCustomer={(t) => sendToDock(t)} 
+          isDarkMode={isDarkMode} 
+      />
+      <AdminSettingsModal 
+          open={settingsOpen} 
+          onClose={() => setSettingsOpen(false)} 
+          API_URL={API_URL} 
+          restaurantId={getRestaurantId()} 
+      />
     </div>
   );
 }
