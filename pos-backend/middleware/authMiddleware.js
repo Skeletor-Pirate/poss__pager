@@ -10,6 +10,7 @@ function authMiddleware(req, res, next) {
   }
 
   const [scheme, token] = authHeader.split(" ");
+
   if (scheme !== "Bearer" || !token) {
     return res.status(401).json({ message: "Invalid authorization format" });
   }
@@ -32,6 +33,7 @@ function authMiddleware(req, res, next) {
 
     next();
   } catch (err) {
+    console.error("JWT verification failed:", err.message);
     return res.status(401).json({ message: "Invalid or expired token" });
   }
 }
