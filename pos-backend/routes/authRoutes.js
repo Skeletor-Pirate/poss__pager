@@ -5,18 +5,25 @@ const authController = require("../controllers/authController");
 const authMiddleware = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 
-// Public
+// =====================
+// PUBLIC
+// =====================
 router.post("/signup", authController.signup);
 router.post("/login", authController.login);
 
-// Admin-only
+// =====================
+// ADMIN ONLY
+// =====================
+
+// Create staff (manager / cashier / kitchen)
 router.post(
-  "/users",
+  "/staff",
   authMiddleware,
   authorizeRoles("admin"),
   authController.createStaff
 );
 
+// Get users of this restaurant
 router.get(
   "/users",
   authMiddleware,
@@ -24,6 +31,7 @@ router.get(
   authController.getAllUsers
 );
 
+// Delete user
 router.delete(
   "/users/:id",
   authMiddleware,
