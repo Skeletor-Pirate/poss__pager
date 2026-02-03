@@ -7,7 +7,8 @@ import SalesReport from './SalesReport';
 import AdminSettingsModal from './AdminSettingsModal';
 import ActiveOrdersDrawer from './ActiveOrdersDrawer';
 
-export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme, API_URL = "http://localhost:3000" }) {
+export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme }) {
+    const API_URL = import.meta.env.VITE_API_URL;
   const theme = getTheme(isDarkMode);
   const token = localStorage.getItem("auth_token");
 
@@ -462,7 +463,6 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
       <AdminSettingsModal 
           open={settingsOpen} 
           onClose={() => setSettingsOpen(false)} 
-          API_URL={API_URL} 
           restaurantId={getRestaurantId()} 
       />
     </div>
