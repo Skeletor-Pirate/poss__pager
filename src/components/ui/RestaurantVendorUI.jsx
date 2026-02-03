@@ -1,14 +1,16 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { LogOut, LayoutDashboard, Coffee, Settings, User, Bell, Plus, Trash2 } from 'lucide-react';
 import { getTheme, COMMON_STYLES, FONTS } from './theme';
+// ✅ IMPORT YOUR HELPER
+import { getUPIQR } from './utils'; 
 import POSView from './POSView';
 import CheckoutModal from './CheckoutModal';
 import SalesReport from './SalesReport';
 import AdminSettingsModal from './AdminSettingsModal';
 import ActiveOrdersDrawer from './ActiveOrdersDrawer';
 
-export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme, API_URL = "http://localhost:3000" }) {
-  const theme = getTheme(isDarkMode);
+export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme, API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000" }) {
+
   const token = localStorage.getItem("auth_token");
   const theme = getTheme(isDarkMode);
 
@@ -196,17 +198,16 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
     return p.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i);
   });
 
-  // --- FINALIZATION ---
- // Find your 'finalizeOrder' function and replace it with this:
+  // --- FINALIZATION (UPDATED) ---
   const finalizeOrder = async (payData) => {
     const method = typeof payData === 'object' ? payData.paymentMethod : payData;
     
-    // ✅ FIX: Send 'name' property. The Backend crashes without it.
+    // Payload for backend (Includes name)
     const payload = {
       paymentMethod: method,
       items: cart.map(i => ({ 
         productId: i.id, 
-        name: i.name,     // <--- THIS WAS MISSING
+        name: i.name, 
         price: i.price, 
         quantity: i.quantity 
       }))
@@ -227,9 +228,23 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
       
       if (dockConnected) sendToDock(selectedToken);
       
-      if (method === 'upi' && r.upi?.qr) {
-          setActiveUpiData(r.upi); 
+      // ✅ LOGIC: Use 'utils.js' to generate QR on Frontend
+      if (method === 'upi') {
+          // Prepare config for your helper function
+          const qrConfig = {
+              pa: settings.upiId,      // from state
+              pn: settings.payeeName,  // from state
+              cu: 'INR'
+          };
+          
+          // Generate the URL locally using the Order ID from backend
+          const qrUrl = getUPIQR(qrConfig, grandTotal, r.token || selectedToken, r.orderId);
+          
+          // Show the Modal with the generated QR
+          setActiveUpiData({ qr: qrUrl }); 
+
       } else {
+        // Normal completion for Cash/Card
         setOrders(p => [...p, { id: r.orderId, token: r.token, items: [...cart], created_at: new Date().toISOString(), total: grandTotal, status: 'pending' }]);
         setCart([]); setDiscount(0); setShowCheckout(false);
         setTimeout(fetchActiveOrders, 500);
@@ -238,20 +253,14 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
         alert(e.message); 
     }
   };
-const handleMarkReady = async (id) => {
-    if (!id || id === 'undefined') return; // Safety check
+
+  const handleMarkReady = async (id) => {
+    if (!id || id === 'undefined') return;
     if (!confirm("Complete Order?")) return;
-    
-    // ✅ FIX: Use DELETE on /orders/:id (Matches backend route)
-    await fetch(`${API_URL}/orders/${id}`, { 
-        method: 'DELETE', 
-        headers: { Authorization: `Bearer ${token}` } 
-    });
-    
+    await fetch(`${API_URL}/orders/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     setOrders(p => p.filter(o => String(o.id) !== String(id)));
     fetchActiveOrders();
   };
-
 
   /* ─── RENDER ─── */
   const navItems = [
@@ -398,20 +407,8 @@ const handleMarkReady = async (id) => {
         payeeName={settings.payeeName} 
         backendUpiData={activeUpiData} 
       />
-      <ActiveOrdersDrawer 
-          isOpen={showActiveOrders} 
-          onClose={() => setShowActiveOrders(false)} 
-          orders={orders} 
-          onCompleteOrder={handleMarkReady} 
-          onCallCustomer={(t) => sendToDock(t)} 
-          isDarkMode={isDarkMode} 
-      />
-      <AdminSettingsModal 
-          open={settingsOpen} 
-          onClose={() => setSettingsOpen(false)} 
-          API_URL={API_URL} 
-          restaurantId={getRestaurantId()} 
-      />
+      <ActiveOrdersDrawer isOpen={showActiveOrders} onClose={() => setShowActiveOrders(false)} orders={orders} onCompleteOrder={handleMarkReady} isDarkMode={isDarkMode} />
+      <AdminSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} API_URL={API_URL} restaurantId={getRestaurantId()} isDarkMode={isDarkMode} />
     </div>
   );
 }

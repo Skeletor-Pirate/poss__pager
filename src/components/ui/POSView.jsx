@@ -1,386 +1,400 @@
-import React, { useState, useMemo } from 'react';
-import { Search, ShoppingCart, Plus, Minus, Trash2, Wifi, ChevronDown, Bell, X as XIcon } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { LogOut, LayoutDashboard, Coffee, Settings, User, Bell, Plus, Trash2 } from 'lucide-react';
 import { getTheme, COMMON_STYLES, FONTS } from './theme';
+import POSView from './POSView';
+import CheckoutModal from './CheckoutModal';
+import SalesReport from './SalesReport';
+import AdminSettingsModal from './AdminSettingsModal';
+import ActiveOrdersDrawer from './ActiveOrdersDrawer';
 
-export default function POSView({
-  menu, categories, cart, orders,
-  selectedCategory, setSelectedCategory,
-  availableTokens, selectedToken, onSetToken,
-  onAddToCart, onRemoveFromCart, onCheckout,
-  userRole, isDarkMode,
-  discount, setDiscount, taxRate,
-  onOpenActiveOrders, onConnectDock, dockConnected,
-  // Admin
-  isAddingItem, setIsAddingItem,
-  newItem, setNewItem,
-  isCreatingCategory, setIsCreatingCategory,
-  handleAdminAddProduct, handleAdminDeleteProduct,
-  rawProducts
-}) {
-  const [searchTerm, setSearchTerm] = useState("");
+export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme, API_URL = "http://localhost:3000" }) {
+
+  const token = localStorage.getItem("auth_token");
+  // ✅ FIX: Declared 'theme' only once now.
   const theme = getTheme(isDarkMode);
 
-  /* ── filtered product list ── */
-  const filteredProducts = useMemo(() => {
-    let products = [];
-    if (selectedCategory === "All" || !selectedCategory) {
-      Object.values(menu).forEach(arr => products.push(...arr));
-    } else {
-      products = menu[selectedCategory] || [];
-    }
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase();
-      products = products.filter(p => p.name.toLowerCase().includes(q));
-    }
-    return products;
-  }, [menu, selectedCategory, searchTerm]);
+  // Helpers
+  const getRestaurantId = () => user?.restaurantId || user?.user?.restaurantId || user?.restaurant_id || 1;
+  const getUserRole = () => user?.role || user?.user?.role || localStorage.getItem("user_role") || 'cashier';
+  const userRole = getUserRole();
 
-  /* ── cart totals (mirrored from parent for display) ── */
+  // --- STATE ---
+  const [orders, setOrders] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [rawProducts, setRawProducts] = useState([]);
+  const [menu, setMenu] = useState({});
+  const [categories, setCategories] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [usersList, setUsersList] = useState([]);
+
+  const [showActiveOrders, setShowActiveOrders] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [activeTab, setActiveTab] = useState(userRole === 'admin' ? 'dashboard' : 'menu');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dockConnected, setDockConnected] = useState(false);
+
+  // Admin State
+  const [isAddingItem, setIsAddingItem] = useState(false);
+  const [newItem, setNewItem] = useState({ name: '', price: '', category: '' });
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: 'cashier' });
+
+  // POS Logic
+  const [selectedToken, setSelectedToken] = useState("1");
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [discount, setDiscount] = useState(0);
+  const [taxRate] = useState(5);
+  
+  // Settings for QR Generation
+  const [settings, setSettings] = useState({ upiId: "", payeeName: "" });
+  const [activeUpiData, setActiveUpiData] = useState(null);
+
+  const hasFetched = useRef(false);
+
+  // --- API ---
+  const refreshProducts = async () => {
+    try {
+      const res = await fetch(`${API_URL}/products`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const list = await res.json();
+        const productList = Array.isArray(list) ? list : [];
+        setRawProducts(productList);
+        const grouped = {};
+        const cats = new Set();
+        productList.forEach(p => {
+          const cat = p.category || "General";
+          if (!grouped[cat]) grouped[cat] = [];
+          cats.add(cat);
+          grouped[cat].push({ id: Number(p.id), name: p.name, price: Number(p.price), category: cat });
+        });
+        setMenu(grouped);
+        setCategories(Array.from(cats));
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const refreshUsers = async () => {
+    try {
+      const userRes = await fetch(`${API_URL}/auth/users`, { headers: { Authorization: `Bearer ${token}` } });
+      if (userRes.ok) setUsersList(await userRes.json());
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchActiveOrders = async () => {
+    try {
+      const res = await fetch(`${API_URL}/orders`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const serverOrders = await res.json();
+        if (Array.isArray(serverOrders)) {
+          setOrders(serverOrders.map(o => ({
+            ...o,
+            startedAt: o.created_at || Date.now(),
+            paymentMethod: 'cash',
+            total: Number(o.total || 0),
+            items: o.items || []
+          })));
+        }
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+    const load = async () => {
+      await refreshProducts();
+      await fetchActiveOrders();
+      try {
+        const sRes = await fetch(`${API_URL}/settings`, { headers: { Authorization: `Bearer ${token}` } });
+        if (sRes.ok) { 
+            const s = await sRes.json(); 
+            setSettings({ upiId: s.upi_id, payeeName: s.payee_name }); 
+        }
+      } catch (e) {}
+      
+      if (userRole === 'admin') await refreshUsers();
+    };
+    load();
+    const interval = setInterval(fetchActiveOrders, 3000);
+    return () => clearInterval(interval);
+  }, [token, API_URL, userRole]);
+
+  // --- HANDLERS ---
+  const handleAdminAddProduct = async () => {
+    if (!newItem.name || !newItem.price) return alert("Name and Price required");
+    await fetch(`${API_URL}/products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: newItem.name, price: newItem.price, category: newItem.category || "General" })
+    });
+    setNewItem({ name: '', price: '', category: '' });
+    setIsCreatingCategory(false);
+    setIsAddingItem(false);
+    refreshProducts();
+  };
+
+  const handleAdminAddUser = async () => {
+    if (!newUser.username || !newUser.email || !newUser.password) return alert("Fill all fields");
+    try {
+      const res = await fetch(`${API_URL}/auth/staff`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(newUser)
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Failed"); }
+      setNewUser({ username: '', email: '', password: '', role: 'cashier' });
+      refreshUsers();
+      alert("Staff added!");
+    } catch (e) { alert(e.message); }
+  };
+
+  const handleAdminDeleteUser = async (id) => {
+    if (!confirm("Delete User?")) return;
+    try {
+      const res = await fetch(`${API_URL}/auth/users/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setUsersList(prev => prev.filter(u => u.id !== id));
+    } catch (e) {}
+  };
+
+  const connectDock = async () => {
+    try {
+      if ('serial' in navigator) {
+        const port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+        setDockConnected(true);
+        alert("Dock Connected Successfully!");
+      } else { alert("Web Serial API not supported in this browser."); }
+    } catch (err) { console.error(err); setDockConnected(false); }
+  };
+
+  const sendToDock = async (tokenNum) => {
+    if (!dockConnected) { alert("Dock not connected. Connect via the Wifi icon."); return; }
+    console.log(`Sending Token ${tokenNum} to Dock...`);
+  };
+
+  // --- CART ---
   const cartSubtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const taxAmount   = Math.max(0, cartSubtotal - discount) * (taxRate / 100);
-  const grandTotal  = Math.round(Math.max(0, cartSubtotal - discount) + taxAmount);
+  const taxAmount = (Math.max(0, cartSubtotal - discount)) * (taxRate / 100);
+  const grandTotal = Math.round((Math.max(0, cartSubtotal - discount)) + taxAmount);
+
+  const availableTokens = useMemo(() => {
+    const used = orders.map(o => String(o.id));
+    return Array.from({ length: 50 }, (_, i) => String(i + 1)).filter(t => !used.includes(t));
+  }, [orders]);
+
+  useEffect(() => {
+    if (availableTokens.length > 0 && !availableTokens.includes(selectedToken)) setSelectedToken(availableTokens[0]);
+  }, [availableTokens, selectedToken]);
+
+  const addToCart = item => setCart(p => {
+    const f = p.find(i => i.id === item.id);
+    return f ? p.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i) : [...p, { ...item, quantity: 1 }];
+  });
+  const removeFromCart = item => setCart(p => {
+    const f = p.find(i => i.id === item.id);
+    if (!f) return p;
+    if (f.quantity === 1) return p.filter(i => i.id !== item.id);
+    return p.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i);
+  });
+
+  // --- FINALIZATION ---
+  const finalizeOrder = async (payData) => {
+    const method = typeof payData === 'object' ? payData.paymentMethod : payData;
+    
+    // ✅ CRITICAL FIX: Including 'name' so your DB order_items table accepts the order
+    const payload = {
+      paymentMethod: method,
+      items: cart.map(i => ({ 
+        productId: i.id, 
+        name: i.name, 
+        price: i.price, 
+        quantity: i.quantity 
+      }))
+    };
+
+    try {
+      const res = await fetch(`${API_URL}/orders`, { 
+          method: "POST", 
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, 
+          body: JSON.stringify(payload) 
+      });
+      
+      const r = await res.json();
+      
+      if (!res.ok) {
+          throw new Error(r.message || "Order Failed");
+      }
+      
+      if (dockConnected) sendToDock(selectedToken);
+      
+      if (method === 'upi' && r.upi?.qr) {
+          setActiveUpiData(r.upi); 
+      } else {
+        setOrders(p => [...p, { id: r.orderId, token: r.token, items: [...cart], created_at: new Date().toISOString(), total: grandTotal, status: 'pending' }]);
+        setCart([]); setDiscount(0); setShowCheckout(false);
+        setTimeout(fetchActiveOrders, 500);
+      }
+    } catch (e) { 
+        alert(e.message); 
+    }
+  };
+
+  const handleMarkReady = async (id) => {
+    if (!id || id === 'undefined') return;
+    if (!confirm("Complete Order?")) return;
+    // ✅ FIX: Using correct DELETE route
+    await fetch(`${API_URL}/orders/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    setOrders(p => p.filter(o => String(o.id) !== String(id)));
+    fetchActiveOrders();
+  };
+
+  /* ─── RENDER ─── */
+  const navItems = [
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', role: 'admin' },
+    { id: 'menu',      icon: Coffee,          label: 'Menu' },
+    { id: 'kitchen',   icon: Bell,            label: 'Kitchen', role: 'cashier', action: () => setShowActiveOrders(true) },
+    { id: 'users',     icon: User,            label: 'Staff',   role: 'admin' },
+  ];
 
   return (
-    <div className={`flex h-full ${theme.bg.main} ${theme.text.main}`} style={{ fontFamily: FONTS.sans }}>
+    <div className={`flex h-screen overflow-hidden ${theme.bg.main} ${theme.text.main}`} style={{ fontFamily: FONTS.sans }}>
 
-      {/* ═══════════════ LEFT – MENU ═══════════════ */}
-      <div className={`flex-1 flex flex-col border-r ${theme.border.default} ${theme.bg.main}`}>
-
-        {/* ── top bar: search + category + icons ── */}
-        <div className={`p-6 border-b flex items-center justify-between gap-4 ${theme.border.default} ${theme.bg.main}`}>
-
-          {/* search */}
-          <div className="relative flex-1 max-w-md">
-            <Search className={`absolute left-4 top-1/2 -translate-y-1/2 ${theme.text.secondary}`} size={20} />
-            <input
-              type="text"
-              placeholder="Search menu..."
-              className={`w-full ${COMMON_STYLES.input(isDarkMode)} pl-12 pr-4 py-3`}
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          {/* category dropdown – desktop */}
-          <div className="relative hidden md:block">
-            <select
-              className={`w-full ${COMMON_STYLES.select(isDarkMode)} pl-4 pr-10 py-3`}
-              value={selectedCategory}
-              onChange={e => setSelectedCategory(e.target.value)}
-            >
-              <option value="All">All Categories</option>
-              {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
-            <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${theme.text.secondary}`} size={16} />
-          </div>
-
-          {/* icon buttons */}
-          <div className="flex items-center gap-3">
-            {/* dock connect */}
-            <button
-              onClick={onConnectDock}
-              className={`p-3 rounded-xl border transition-all
-                ${dockConnected
-                  ? `${theme.bg.active} ${theme.border.default} ${theme.text.main}`
-                  : `${theme.border.default} ${theme.button.ghost}`}`}
-            >
-              <Wifi size={20} className={dockConnected ? 'animate-pulse' : ''} />
-            </button>
-
-            {/* active-orders bell */}
-            <button
-              onClick={onOpenActiveOrders}
-              className={`p-3 rounded-xl border relative transition-all ${theme.border.default} ${theme.button.ghost}`}
-            >
-              <Bell size={20} />
-              {orders.length > 0 && (
-                <span className={`absolute -top-1 -right-1 h-5 w-5 text-xs font-semibold rounded-full
-                  flex items-center justify-center border-2
-                  ${isDarkMode ? 'bg-white text-black border-black' : 'bg-black text-white border-white'}`}>
-                  {orders.length}
-                </span>
-              )}
-            </button>
-          </div>
+      {/* SIDEBAR */}
+      <aside className={`w-20 lg:w-64 flex flex-col border-r ${theme.border.default} ${theme.bg.card}`}>
+        <div className="flex items-center gap-3 justify-center lg:justify-start p-6">
+          <div className={`p-2 rounded-xl ${theme.bg.subtle}`}><Settings size={22} /></div>
+          <h1 className="hidden lg:block text-xl font-semibold">POSPro</h1>
         </div>
-
-        {/* ── mobile category pills ── */}
-        <div className={`md:hidden p-4 pb-0 flex gap-3 overflow-x-auto scrollbar-hide ${theme.bg.main}`}>
-          {["All", ...categories].map(cat => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all border
-                ${selectedCategory === cat ? theme.button.primary : `${theme.border.default} ${theme.button.secondary}`}`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        {/* ── ADMIN: add-product form ── */}
-        {userRole === 'admin' && isAddingItem && (
-          <div className={`p-6 ${theme.bg.main}`}>
-            <div className={`p-6 rounded-lg border animate-in fade-in zoom-in-95 duration-200 ${COMMON_STYLES.card(isDarkMode)}`}>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                {/* name */}
-                <input
-                  placeholder="Name"
-                  className={`w-full ${COMMON_STYLES.input(isDarkMode)}`}
-                  value={newItem.name}
-                  onChange={e => setNewItem({ ...newItem, name: e.target.value })}
-                />
-                {/* price */}
-                <input
-                  placeholder="Price (₹)"
-                  type="number"
-                  className={`w-full ${COMMON_STYLES.input(isDarkMode)}`}
-                  value={newItem.price}
-                  onChange={e => setNewItem({ ...newItem, price: e.target.value })}
-                />
-                {/* category (existing or new) */}
-                <div className="relative col-span-2 md:col-span-2">
-                  {isCreatingCategory ? (
-                    <div className="flex gap-2">
-                      <input
-                        placeholder="New category"
-                        className={`w-full flex-1 ${COMMON_STYLES.input(isDarkMode)}`}
-                        value={newItem.category}
-                        onChange={e => setNewItem({ ...newItem, category: e.target.value })}
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => { setIsCreatingCategory(false); setNewItem({ ...newItem, category: '' }); }}
-                        className={`px-3 py-2 rounded-lg transition-colors ${theme.button.ghost}`}
-                      >
-                        <XIcon size={20} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <select
-                        className={`w-full ${COMMON_STYLES.select(isDarkMode)}`}
-                        value={newItem.category}
-                        onChange={e => {
-                          if (e.target.value === '__NEW__') { setIsCreatingCategory(true); setNewItem({ ...newItem, category: '' }); }
-                          else setNewItem({ ...newItem, category: e.target.value });
-                        }}
-                      >
-                        <option value="" disabled>Category</option>
-                        {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                        <option value="__NEW__">+ Add New</option>
-                      </select>
-                      <ChevronDown className={`absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none ${theme.text.secondary}`} size={16} />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex gap-3 justify-end">
-                <button
-                  onClick={() => { setIsAddingItem(false); setIsCreatingCategory(false); }}
-                  className={`px-6 py-2 rounded-lg font-medium transition-colors ${theme.button.secondary}`}
-                >Cancel</button>
-                <button onClick={handleAdminAddProduct} className={`px-8 py-2 rounded-lg font-medium transition-colors ${theme.button.primary}`}>Save</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── ADMIN: product table ── */}
-        {userRole === 'admin' && !isAddingItem && (
-          <div className={`flex-1 overflow-y-auto p-6 ${theme.bg.main}`}>
-
-            {/* header row: title + add button */}
-            <div className="flex items-center justify-between mb-4">
-              <h3 className={`text-sm font-semibold ${theme.text.main}`}>Products</h3>
+        <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
+          {navItems.map(item => (
+            (!item.role || item.role === userRole) && (
               <button
-                onClick={() => setIsAddingItem(true)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all active:scale-[0.97] ${theme.button.primary}`}
+                key={item.id}
+                onClick={() => item.action ? item.action() : setActiveTab(item.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors outline-none
+                  ${activeTab === item.id && !item.action ? `${theme.bg.active} ${theme.text.main}` : theme.button.ghost}`}
               >
-                <Plus size={16} strokeWidth={2.5} /> Add Product
+                <item.icon size={18} />
+                <span className="hidden lg:block">{item.label}</span>
+                {item.id === 'kitchen' && orders.length > 0 && (
+                  <span className={`hidden lg:flex ml-auto ${COMMON_STYLES.badge(isDarkMode)}`}>{orders.length}</span>
+                )}
               </button>
-            </div>
-
-            {rawProducts.length === 0 ? (
-              /* empty state */
-              <div className={`rounded-lg border flex flex-col items-center justify-center py-16 ${COMMON_STYLES.card(isDarkMode)}`}>
-                <div className={`p-4 rounded-xl mb-4 ${theme.bg.subtle}`}>
-                  <Plus size={28} className={theme.text.secondary} />
-                </div>
-                <p className={`text-sm font-medium mb-1 ${theme.text.main}`}>No products yet</p>
-                <p className={`text-xs mb-4 ${theme.text.secondary}`}>Click the button above to add your first item</p>
-                <button
-                  onClick={() => setIsAddingItem(true)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all ${theme.button.primary}`}
-                >
-                  <Plus size={15} strokeWidth={2.5} /> Add Product
-                </button>
-              </div>
-            ) : (
-              <div className={`rounded-lg overflow-hidden ${COMMON_STYLES.card(isDarkMode)}`}>
-                <table className="w-full text-left">
-                  <thead className={COMMON_STYLES.tableHeader(isDarkMode)}>
-                    <tr>
-                      <th className="p-4 pl-6 font-medium">Name</th>
-                      <th className="p-4 font-medium">Category</th>
-                      <th className="p-4 font-medium">Price</th>
-                      <th className="p-4 text-right pr-6 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rawProducts.map(p => (
-                      <tr key={p.id} className={COMMON_STYLES.tableRow(isDarkMode)}>
-                        <td className={`p-4 pl-6 font-medium ${theme.text.main}`}>{p.name}</td>
-                        <td className="p-4"><span className={COMMON_STYLES.badge(isDarkMode)}>{p.category}</span></td>
-                        <td className={`p-4 font-mono ${theme.text.main}`}>₹{p.price}</td>
-                        <td className="p-4 text-right pr-6">
-                          <button onClick={() => handleAdminDeleteProduct(p.id)} className={`p-2 rounded-lg transition-colors outline-none ${theme.button.ghost}`}>
-                            <Trash2 size={18} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── CASHIER: product grid ── */}
-        {userRole !== 'admin' && (
-          <div className={`flex-1 overflow-y-auto p-6 ${theme.bg.main}`}>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredProducts.map(product => (
-                <div
-                  key={product.id}
-                  className={`rounded-lg border p-5 relative overflow-hidden group transition-all flex flex-col
-                    ${COMMON_STYLES.card(isDarkMode)} ${theme.border.hover}`}
-                >
-                  {/* category badge */}
-                  <span className={`absolute top-4 left-4 ${COMMON_STYLES.badge(isDarkMode)} uppercase text-[10px]`}>
-                    {product.category}
-                  </span>
-
-                  {/* name */}
-                  <div className="mt-8 flex-1">
-                    <h3 className={`text-base font-semibold line-clamp-2 ${theme.text.main}`}>{product.name}</h3>
-                  </div>
-
-                  {/* price row + add button */}
-                  <div className="flex items-end justify-between mt-4">
-                    <div>
-                      <p className={`text-xs font-medium mb-0.5 ${theme.text.secondary}`}>Price</p>
-                      <p className={`text-xl font-semibold font-mono ${theme.text.main}`}>₹{product.price}</p>
-                    </div>
-                    <button
-                      onClick={() => onAddToCart(product)}
-                      className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-1.5 transition-all active:scale-[0.96] ${theme.button.primary}`}
-                    >
-                      <Plus size={16} strokeWidth={2.5} /> Add
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ═══════════════ RIGHT – CART (cashier only) ═══════════════ */}
-      {userRole !== 'admin' && (
-        <div className={`w-96 border-l flex flex-col ${theme.bg.card} ${theme.border.default}`}>
-
-          {/* cart header */}
-          <div className={`p-6 border-b flex items-center justify-between ${theme.border.default}`}>
-            <div className="flex items-center gap-3">
-              <ShoppingCart size={22} className={theme.text.main} />
-              <h2 className={`text-xl font-semibold ${theme.text.main}`}>Order</h2>
-            </div>
-            {/* token selector */}
-            <div className={`px-3 py-1 rounded-lg border ${theme.border.default} ${theme.bg.subtle}`}>
-              <span className={`text-xs font-medium uppercase mr-2 ${theme.text.secondary}`}>Token</span>
-              <select
-                value={selectedToken}
-                onChange={e => onSetToken(e.target.value)}
-                className={`font-semibold outline-none appearance-none cursor-pointer bg-transparent ${theme.text.main}`}
-              >
-                {availableTokens.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* cart items */}
-          <div className={`flex-1 overflow-y-auto p-5 space-y-3 ${theme.bg.main}`}>
-            {cart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-[40vh] space-y-3">
-                <ShoppingCart size={56} className={theme.text.muted} />
-                <p className={`text-sm font-medium ${theme.text.secondary}`}>Cart is empty</p>
-              </div>
-            ) : (
-              cart.map(item => (
-                <div key={item.id} className={`border rounded-lg p-4 flex items-center justify-between transition-all ${COMMON_STYLES.card(isDarkMode)} ${theme.border.hover}`}>
-                  <div className="flex-1 pr-4">
-                    <h4 className={`font-medium text-sm ${theme.text.main}`}>{item.name}</h4>
-                    <p className={`text-sm font-mono ${theme.text.secondary}`}>₹{item.price}</p>
-                  </div>
-                  <div className={`flex items-center gap-2 p-1 rounded-lg border ${theme.bg.main} ${theme.border.default}`}>
-                    <button onClick={() => onRemoveFromCart(item)} className={`p-1.5 rounded transition-colors ${theme.button.ghost}`}>
-                      {item.quantity === 1 ? <Trash2 size={16} /> : <Minus size={16} strokeWidth={2.5} />}
-                    </button>
-                    <span className={`font-semibold w-5 text-center text-sm ${theme.text.main}`}>{item.quantity}</span>
-                    <button onClick={() => onAddToCart(item)} className={`p-1.5 rounded transition-colors ${theme.button.ghost}`}>
-                      <Plus size={16} strokeWidth={2.5} />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* cart footer – totals + checkout */}
-          <div className={`p-6 border-t ${theme.border.default} ${theme.bg.card}`}>
-            <div className="space-y-3 mb-5">
-              {/* subtotal */}
-              <div className={`flex justify-between text-sm font-medium ${theme.text.secondary}`}>
-                <span>Subtotal</span>
-                <span className="font-mono">₹{cartSubtotal}</span>
-              </div>
-              {/* discount */}
-              <div className={`flex justify-between text-sm font-medium items-center ${theme.text.secondary}`}>
-                <span>Discount</span>
-                <input
-                  type="number"
-                  value={discount}
-                  onChange={e => setDiscount(Math.max(0, e.target.value))}
-                  className={`w-20 ${COMMON_STYLES.input(isDarkMode)} py-1 px-2 text-right font-mono text-sm`}
-                />
-              </div>
-              {/* tax */}
-              <div className={`flex justify-between text-sm font-medium ${theme.text.secondary}`}>
-                <span>GST ({taxRate}%)</span>
-                <span className="font-mono">₹{taxAmount.toFixed(2)}</span>
-              </div>
-              {/* grand total */}
-              <div className={`flex justify-between font-semibold text-lg pt-3 border-t ${theme.text.main} ${theme.border.default}`}>
-                <span>Total</span>
-                <span className="font-mono">₹{grandTotal}</span>
-              </div>
-            </div>
-
-            {/* checkout button */}
-            <button
-              onClick={onCheckout}
-              disabled={cart.length === 0}
-              className={`w-full py-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]
-                ${cart.length > 0 ? theme.button.primary : `${theme.bg.subtle} ${theme.text.muted} cursor-not-allowed`}`}
-            >
-              Checkout &amp; Call Token {selectedToken}
-            </button>
-          </div>
+            )
+          ))}
+          <button onClick={() => setSettingsOpen(true)} className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors outline-none ${theme.button.ghost}`}>
+            <Settings size={18} /> <span className="hidden lg:block">Settings</span>
+          </button>
+        </nav>
+        <div className={`mt-auto border-t ${theme.border.default} p-3`}>
+          <button onClick={onLogout} className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors outline-none ${theme.button.ghost}`}>
+            <LogOut size={18} /> <span className="hidden lg:block">Logout</span>
+          </button>
         </div>
-      )}
+      </aside>
+
+      {/* MAIN CONTENT */}
+      <main className={`flex-1 flex flex-col overflow-hidden ${theme.bg.main}`}>
+        <header className={`h-16 flex items-center justify-between px-8 border-b ${theme.border.default} ${theme.bg.card}`}>
+          <h2 className="text-xl font-semibold capitalize">{activeTab === 'dashboard' ? 'Overview' : activeTab === 'menu' ? 'Menu & Orders' : activeTab}</h2>
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+              <p className={`text-sm font-medium ${theme.text.main}`}>{user?.username || 'Admin'}</p>
+              <p className={`text-xs uppercase font-medium tracking-wider ${theme.text.tertiary}`}>{userRole}</p>
+            </div>
+            <div className={`h-8 w-8 rounded-full flex items-center justify-center border ${theme.border.default} ${theme.bg.subtle}`}>
+              <User size={16} className={theme.text.secondary} />
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto relative">
+          {activeTab === 'dashboard' && userRole === 'admin' && (
+            <div className="p-8"><SalesReport orders={orders} history={history} products={rawProducts} isDarkMode={isDarkMode} /></div>
+          )}
+          {activeTab === 'menu' && (
+            <POSView
+              menu={menu} categories={categories} cart={cart} orders={orders}
+              selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory}
+              availableTokens={availableTokens} selectedToken={selectedToken} onSetToken={setSelectedToken}
+              onAddToCart={addToCart} onRemoveFromCart={removeFromCart} onCheckout={() => setShowCheckout(true)}
+              isDarkMode={isDarkMode} discount={discount} setDiscount={setDiscount} taxRate={taxRate}
+              onConnectDock={connectDock} dockConnected={dockConnected} onCallCustomer={(t) => sendToDock(t)}
+              userRole={userRole}
+              isAddingItem={isAddingItem} setIsAddingItem={setIsAddingItem}
+              newItem={newItem} setNewItem={setNewItem}
+              isCreatingCategory={isCreatingCategory} setIsCreatingCategory={setIsCreatingCategory}
+              handleAdminAddProduct={handleAdminAddProduct}
+              handleAdminDeleteProduct={(id) => { if (confirm("Delete?")) fetch(`${API_URL}/products/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).then(refreshProducts); }}
+              rawProducts={rawProducts}
+            />
+          )}
+          {activeTab === 'users' && userRole === 'admin' && (
+            <div className="max-w-4xl mx-auto p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h2 className={`text-2xl font-semibold mb-8 ${theme.text.main}`}>Staff Management</h2>
+              <div className={`p-6 rounded-lg border mb-8 ${COMMON_STYLES.card(isDarkMode)}`}>
+                <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${theme.text.main}`}><Plus size={16} /> Add User</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                  {['Username', 'Email', 'Password'].map((label) => (
+                    <div key={label}>
+                      <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>{label}</label>
+                      <input 
+                        type={label === 'Password' ? 'password' : 'text'}
+                        className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} 
+                        value={newUser[label.toLowerCase()]} 
+                        onChange={e => setNewUser({ ...newUser, [label.toLowerCase()]: e.target.value })} 
+                        placeholder={label} 
+                      />
+                    </div>
+                  ))}
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Role</label>
+                      <select className={`w-full ${COMMON_STYLES.select(isDarkMode)}`} value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
+                        <option value="cashier">Cashier</option><option value="manager">Manager</option><option value="admin">Admin</option>
+                      </select>
+                    </div>
+                    <button onClick={handleAdminAddUser} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors outline-none mt-auto ${theme.button.primary}`}>Create</button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {usersList.map(u => (
+                  <div key={u.id} className={`p-5 rounded-lg border flex justify-between items-center group transition-colors ${COMMON_STYLES.card(isDarkMode)} ${theme.border.hover}`}>
+                    <div className="flex items-center gap-4">
+                      <div className={`p-3 rounded-md ${theme.bg.subtle}`}><User size={20} /></div>
+                      <div>
+                        <p className={`font-medium text-sm ${theme.text.main}`}>{u.username || u.email.split('@')[0]}</p>
+                        <p className={`text-xs font-medium ${theme.text.tertiary}`}>{u.role}</p>
+                        <p className={`text-xs ${theme.text.muted}`}>{u.email}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => handleAdminDeleteUser(u.id)} className={`p-2 rounded-md opacity-0 group-hover:opacity-100 transition-all outline-none ${theme.bg.hover}`}><Trash2 size={16} className={theme.text.secondary} /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* OVERLAYS */}
+      <CheckoutModal 
+        isOpen={showCheckout} 
+        onClose={() => { setShowCheckout(false); setActiveUpiData(null); }} 
+        onConfirm={finalizeOrder} 
+        cartSubtotal={cartSubtotal} 
+        taxAmount={taxAmount} 
+        discount={discount} 
+        grandTotal={grandTotal} 
+        orderId={orders.length + 1} 
+        isDarkMode={isDarkMode} 
+        upiId={settings.upiId} 
+        payeeName={settings.payeeName} 
+        backendUpiData={activeUpiData} 
+      />
+      <ActiveOrdersDrawer isOpen={showActiveOrders} onClose={() => setShowActiveOrders(false)} orders={orders} onCompleteOrder={handleMarkReady} isDarkMode={isDarkMode} />
+      <AdminSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} API_URL={API_URL} restaurantId={getRestaurantId()} isDarkMode={isDarkMode} />
     </div>
   );
 }
