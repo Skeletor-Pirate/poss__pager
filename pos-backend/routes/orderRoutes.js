@@ -1,12 +1,17 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const orderController = require("../controllers/orderController");
-const authMiddleware = require("../middleware/authMiddleware");
+const orderController = require('../controllers/orderController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 console.log("✅ Order Routes Loaded");
 
-router.post("/", authMiddleware, orderController.createOrder);
-router.get("/", authMiddleware, orderController.getActiveOrders);
-router.put("/:id/complete", authMiddleware, orderController.completeOrder);
+// 1. Create Order
+router.post('/', authMiddleware, orderController.createOrder);
+
+// 2. Get Active Orders
+router.get('/', authMiddleware, orderController.getActiveOrders);
+
+// 3. Delete Order (Complete)
+router.delete('/:id', authMiddleware, orderController.deleteOrder);
 
 module.exports = router;
