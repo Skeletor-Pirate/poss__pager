@@ -8,7 +8,7 @@ import AdminSettingsModal from './AdminSettingsModal';
 import ActiveOrdersDrawer from './ActiveOrdersDrawer';
 
 export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme, API_URL = "http://localhost:3000" }) {
-
+  const theme = getTheme(isDarkMode);
   const token = localStorage.getItem("auth_token");
   const theme = getTheme(isDarkMode);
 
@@ -398,8 +398,20 @@ const handleMarkReady = async (id) => {
         payeeName={settings.payeeName} 
         backendUpiData={activeUpiData} 
       />
-      <ActiveOrdersDrawer isOpen={showActiveOrders} onClose={() => setShowActiveOrders(false)} orders={orders} onCompleteOrder={handleMarkReady} isDarkMode={isDarkMode} />
-      <AdminSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} API_URL={API_URL} restaurantId={getRestaurantId()} isDarkMode={isDarkMode} />
+      <ActiveOrdersDrawer 
+          isOpen={showActiveOrders} 
+          onClose={() => setShowActiveOrders(false)} 
+          orders={orders} 
+          onCompleteOrder={handleMarkReady} 
+          onCallCustomer={(t) => sendToDock(t)} 
+          isDarkMode={isDarkMode} 
+      />
+      <AdminSettingsModal 
+          open={settingsOpen} 
+          onClose={() => setSettingsOpen(false)} 
+          API_URL={API_URL} 
+          restaurantId={getRestaurantId()} 
+      />
     </div>
   );
 }

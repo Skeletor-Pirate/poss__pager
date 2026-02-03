@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, CreditCard, User } from 'lucide-react';
 
-export default function AdminSettingsModal({ open, onClose, API_URL, restaurantId, isDarkMode }) {
+export default function AdminSettingsModal({ open, onClose,  restaurantId, isDarkMode }) {
+  const API_URL = import.meta.env.VITE_API_URL;
   const [upiId, setUpiId] = useState("");
   const [payeeName, setPayeeName] = useState("");
   const [loading, setLoading] = useState(false);
