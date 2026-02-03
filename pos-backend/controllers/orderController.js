@@ -17,10 +17,19 @@ exports.createOrder = async (req, res) => {
     0
   );
 
+  // SIMPLE pager token generation (incremental)
+  const [[{ maxToken }]] = await db.query(
+    `SELECT MAX(token) AS maxToken FROM orders WHERE restaurant_id = ?`,
+    [restaurantId]
+  );
+
+  const token = (maxToken || 0) + 1;
+
   const orderId = await orderModel.createOrder({
     restaurantId,
     total,
-    paymentMethod
+    paymentMethod,
+    token
   });
 
   for (const item of items) {
@@ -51,7 +60,7 @@ exports.createOrder = async (req, res) => {
     };
   }
 
-  res.json({ orderId, total, upi });
+  res.json({ orderId, token, total, upi });
 };
 
 // ---------------- GET ACTIVE ORDERS (KITCHEN) ----------------
@@ -60,11 +69,11 @@ exports.getActiveOrders = async (req, res) => {
 
   const [orders] = await db.query(
     `
-    SELECT o.id, o.total, o.status, o.created_at
-    FROM orders o
-    WHERE o.restaurant_id = ?
-      AND o.status = 'PENDING'
-    ORDER BY o.created_at ASC
+    SELECT id, total, payment_method, payment_status, token, created_at
+    FROM orders
+    WHERE restaurant_id = ?
+      AND payment_status = 'pending'
+    ORDER BY created_at ASC
     `,
     [restaurantId]
   );
@@ -72,18 +81,12 @@ exports.getActiveOrders = async (req, res) => {
   res.json(orders);
 };
 
-// ---------------- DELETE / COMPLETE ORDER ----------------
-exports.deleteOrder = async (req, res) => {
+// ---------------- COMPLETE ORDER ----------------
+exports.completeOrder = async (req, res) => {
   const restaurantId = req.user.restaurantId;
   const orderId = req.params.id;
 
-  await db.query(
-    `
-    DELETE FROM orders
-    WHERE id = ? AND restaurant_id = ?
-    `,
-    [orderId, restaurantId]
-  );
+  await orderModel.markOrderPaid(orderId, restaurantId);
 
-  res.json({ message: "Order completed" });
+  res.json({ message: "Order marked as paid" });
 };
