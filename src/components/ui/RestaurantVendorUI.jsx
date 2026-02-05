@@ -143,15 +143,34 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
   };
 
   const handleAdminAddUser = async () => { 
-      if(!newUser.username || !newUser.email || !newUser.password) return alert("Fill all fields"); 
-      const rId = getRestaurantId(); 
-      await fetch(`${API_URL}/auth/signup`, { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ ...newUser, restaurantId: rId }) 
-      }); 
-      setNewUser({ username: '', email: '', password: '', role: 'cashier' }); 
-      refreshUsers(); 
+    if (!newUser.username || !newUser.email || !newUser.password) {
+      return alert("Fill all fields");
+    }
+  
+    const res = await fetch(`${API_URL}/auth/staff`, {   // 🔥 FIXED
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        username: newUser.username,
+        email: newUser.email,
+        password: newUser.password,
+        role: newUser.role            // manager | cashier | kitchen
+      })
+    });
+  
+    const data = await res.json();
+  
+    if (!res.ok) {
+      console.error(data);
+      alert(data.message || "Failed to create staff");
+      return;
+    }
+  
+    setNewUser({ username: '', email: '', password: '', role: 'cashier' });
+    refreshUsers();
   };
 
   const handleAdminDeleteUser = async (id) => { 
@@ -275,13 +294,14 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
                  </button>
                 )
              ))}
-             <button 
-                onClick={() => setSettingsOpen(true)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors outline-none ${theme.button.ghost}`}
-             >
-                <Settings size={18}/>
-                <span className="hidden lg:block">Settings</span>
-             </button>
+            {userRole === 'admin' && (
+            <button 
+                        onClick={() => setSettingsOpen(true)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors outline-none ${theme.button.ghost}`}>
+                        <Settings size={18}/>
+                        <span className="hidden lg:block">Settings</span>
+            </button>
+            )}
          </nav>
 
          <div className={`mt-auto pt-6 border-t space-y-1 ${theme.border.default}`}>
@@ -460,11 +480,13 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
           onCallCustomer={(t) => sendToDock(t)} 
           isDarkMode={isDarkMode} 
       />
-      <AdminSettingsModal 
-          open={settingsOpen} 
-          onClose={() => setSettingsOpen(false)} 
-          restaurantId={getRestaurantId()} 
-      />
+      {userRole === 'admin' && (
+        <AdminSettingsModal 
+        open={settingsOpen} 
+        onClose={() => setSettingsOpen(false)} 
+        restaurantId={getRestaurantId()} 
+        />
+)}
     </div>
   );
 }
