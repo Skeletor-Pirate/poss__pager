@@ -33,9 +33,9 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
   
   const [dockConnected, setDockConnected] = useState(false);
 
-  // Admin State
+  // Admin State (Shared with POSView)
   const [isAddingItem, setIsAddingItem] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', price: '', category: '', stock: '' });
+  const [newItem, setNewItem] = useState({ name: '', price: '', category: '', stock: '', id: null });
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: 'cashier' });
 
@@ -123,18 +123,55 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
   }, [userRole, activeTab]);
 
   // --- HANDLERS ---
+  
+  // 1. ADD Product
   const handleAdminAddProduct = async () => { 
       const rId = getRestaurantId();
-      const productPayload = { ...newItem, stock: newItem.stock || 0, restaurantId: rId };
+      // Ensure stock is sent as a number, defaulting to 0
+      const stockValue = newItem.stock ? parseInt(newItem.stock) : 0;
+      const productPayload = { ...newItem, stock: stockValue, restaurantId: rId };
+      
       await fetch(`${API_URL}/products`, { 
           method: 'POST', 
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, 
           body: JSON.stringify(productPayload) 
       }); 
-      setNewItem({ name: '', price: '', category: '', stock: '' }); 
+      
+      setNewItem({ name: '', price: '', category: '', stock: '', id: null }); 
       setIsCreatingCategory(false); 
       setIsAddingItem(false); 
       refreshProducts(); 
+  };
+
+  // 2. UPDATE Product (New Function for PUT Route)
+  const handleAdminUpdateProduct = async () => {
+    if (!newItem.id) return alert("Error: No product ID found for update");
+    
+    const stockValue = newItem.stock ? parseInt(newItem.stock) : 0;
+    const productPayload = { 
+        name: newItem.name,
+        price: newItem.price,
+        category: newItem.category,
+        stock: stockValue
+    };
+
+    try {
+        const res = await fetch(`${API_URL}/products/${newItem.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(productPayload)
+        });
+
+        if (!res.ok) throw new Error("Update failed");
+
+        setNewItem({ name: '', price: '', category: '', stock: '', id: null });
+        setIsCreatingCategory(false);
+        setIsAddingItem(false);
+        refreshProducts();
+    } catch (e) {
+        console.error(e);
+        alert("Failed to update product");
+    }
   };
 
   const handleAdminAddUser = async () => { 
@@ -144,12 +181,7 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
     const res = await fetch(`${API_URL}/auth/staff`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        username: newUser.username,
-        email: newUser.email,
-        password: newUser.password,
-        role: newUser.role
-      })
+      body: JSON.stringify(newUser)
     });
     const data = await res.json();
     if (!res.ok) {
@@ -251,13 +283,12 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
       }
   };
 
-  // ✅ THIS IS THE NEW FUNCTION THAT MAKES THE BUTTON WORK
   const handlePaymentSuccess = () => {
-    setCart([]); // Clear cart
+    setCart([]); 
     setDiscount(0);
-    setActiveUpiData(null); // Clear QR
-    setShowCheckout(false); // Close Modal
-    setTimeout(fetchActiveOrders, 500); // Refresh Dashboard
+    setActiveUpiData(null); 
+    setShowCheckout(false); 
+    setTimeout(fetchActiveOrders, 500); 
   };
 
   return (
@@ -329,7 +360,10 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
                     onConnectDock={connectDock} dockConnected={dockConnected} onCallCustomer={(t) => sendToDock(t)}
                     userRole={userRole} isAddingItem={isAddingItem} setIsAddingItem={setIsAddingItem}
                     newItem={newItem} setNewItem={setNewItem} isCreatingCategory={isCreatingCategory} setIsCreatingCategory={setIsCreatingCategory}
+                    
+                    // ✅ PASSED HANDLERS FOR ADD & UPDATE
                     handleAdminAddProduct={handleAdminAddProduct}
+                    handleAdminUpdateProduct={handleAdminUpdateProduct} 
                     handleAdminDeleteProduct={(id) => { if (confirm("Delete?")) fetch(`${API_URL}/products/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).then(refreshProducts); }}
                     rawProducts={rawProducts}
                   />
@@ -378,7 +412,7 @@ export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggl
           upiId={settings.upiId} 
           payeeName={settings.payeeName} 
           backendUpiData={activeUpiData} 
-          onPaymentComplete={handlePaymentSuccess} // ✅ This is what was missing!
+          onPaymentComplete={handlePaymentSuccess} 
       />
       <ActiveOrdersDrawer 
           isOpen={showActiveOrders} 
