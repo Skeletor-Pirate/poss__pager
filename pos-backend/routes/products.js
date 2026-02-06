@@ -23,13 +23,13 @@ router.post("/", async (req, res) => {
 });
 
 router.put("/:id", async (req, res) => {
-  const { name, price, category } = req.body;
+  const { stock,name, price, category } = req.body;
 
   await db.query(
     `UPDATE products
-     SET name=?, price=?, category=?
+     SET name=?, price=?, category=?, stock=?
      WHERE id=? AND restaurant_id=?`,
-    [name, price, category, req.params.id, req.user.restaurantId]
+    [name, price, category,stock, req.params.id, req.user.restaurantId]
   );
 
   res.json({ message: "Updated" });
