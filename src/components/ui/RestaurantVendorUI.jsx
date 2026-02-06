@@ -1,321 +1,556 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
-import {
-  LogOut,
-  Sun,
-  Moon,
-  Bell,
-  Usb,
-  ShoppingCart,
-  Plus,
-  Minus,
-  X,
-  User
-} from "lucide-react";
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { LogOut, LayoutDashboard, Coffee, Settings, User, Sun, Moon, Bell, Plus, Trash2, Box, ChevronDown, X as XIcon, Wifi } from 'lucide-react';
+import { getTheme, COMMON_STYLES, FONTS } from './theme';
+import POSView from './POSView';
+import CheckoutModal from './CheckoutModal';
+import SalesReport from './SalesReport';
+import AdminSettingsModal from './AdminSettingsModal';
+import ActiveOrdersDrawer from './ActiveOrdersDrawer';
 
-import POSView from "./POSView";
-import CheckoutModal from "./CheckoutModal";
-import ActiveOrdersDrawer from "./ActiveOrdersDrawer";
-
-export default function RestaurantVendorUI({
-  user,
-  onLogout,
-  isDarkMode,
-  onToggleTheme
-}) {
-  const API_URL = import.meta.env.VITE_API_URL;
+export default function RestaurantVendorUI({ user, onLogout, isDarkMode, onToggleTheme }) {
+    const API_URL = import.meta.env.VITE_API_URL;
+  const theme = getTheme(isDarkMode);
   const token = localStorage.getItem("auth_token");
 
-  /* ================= USER CONTEXT ================= */
-  const resolvedUser = user?.user || user;
-  const userRole = resolvedUser?.role || "cashier";
-  const username = resolvedUser?.username || "User";
-  const restaurantId = resolvedUser?.restaurantId;
+  // Helpers
+  const getRestaurantId = () => user?.restaurantId || user?.user?.restaurantId || user?.restaurant_id || 1;
+  const getUserRole = () => user?.role || user?.user?.role || localStorage.getItem("user_role") || 'cashier';
+  const userRole = getUserRole();
 
-  /* ================= STATE ================= */
-  const [rawProducts, setRawProducts] = useState([]);
+  // --- STATE ---
+  const [orders, setOrders] = useState([]); 
+  const [history, setHistory] = useState([]); 
+  const [rawProducts, setRawProducts] = useState([]); 
   const [menu, setMenu] = useState({});
   const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState("All");
-
   const [cart, setCart] = useState([]);
-  const [orders, setOrders] = useState([]);
+  const [usersList, setUsersList] = useState([]);
 
+  const [showActiveOrders, setShowActiveOrders] = useState(false); 
   const [showCheckout, setShowCheckout] = useState(false);
-  const [showKitchen, setShowKitchen] = useState(false);
+  const [activeTab, setActiveTab] = useState(userRole === 'admin' ? 'dashboard' : 'menu');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  
+  const [dockConnected, setDockConnected] = useState(false);
 
-  /* ===== TOKEN SYSTEM ===== */
+  // Admin State
+  const [isAddingItem, setIsAddingItem] = useState(false);
+  const [newItem, setNewItem] = useState({ name: '', price: '', category: '', stock: '' });
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: 'cashier' });
+
+  // POS Logic
   const [selectedToken, setSelectedToken] = useState("1");
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [discount, setDiscount] = useState(0);
+  const [taxRate] = useState(5); 
+  const [settings, setSettings] = useState({ upiId: "", payeeName: "" });
+  const [activeUpiData, setActiveUpiData] = useState(null);
+
+  const hasFetched = useRef(false);
+  
+  // --- API ---
+  const refreshProducts = async () => {
+      try {
+        const res = await fetch(`${API_URL}/products?restaurantId=${getRestaurantId()}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+            const list = await res.json();
+            const productList = Array.isArray(list) ? list : list.products || [];
+            setRawProducts(productList);
+            const grouped = {};
+            const cats = new Set();
+            productList.forEach(p => {
+                const cat = p.category || "General";
+                if (!grouped[cat]) grouped[cat] = []; 
+                cats.add(cat);
+                grouped[cat].push({ id: Number(p.id), name: p.name, price: Number(p.price), stock: p.stock, category: cat });
+            });
+            setMenu(grouped);
+            setCategories(Array.from(cats));
+        }
+      } catch (e) { console.error(e); }
+  };
+
+  const refreshUsers = async () => {
+      try {
+        const userRes = await fetch(`${API_URL}/auth/users`, { headers: { Authorization: `Bearer ${token}` } });
+        if (userRes.ok) setUsersList(await userRes.json());
+      } catch (e) { console.error(e); }
+  };
+
+  const fetchActiveOrders = async () => {
+    try {
+        const res = await fetch(`${API_URL}/orders?status=active`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+            const serverOrders = await res.json();
+            if(Array.isArray(serverOrders)) {
+                // Filter out completed orders (in case backend doesn't filter)
+                const activeOnly = serverOrders.filter(o => 
+                  (o.payment_status || '').toLowerCase() !== 'completed'
+                );
+                setOrders(activeOnly.map(o => ({
+                    ...o,
+                    startedAt: o.startedAt || o.created_at || Date.now(), 
+                    paymentMethod: (o.paymentMethod || o.payment_method || 'cash').toLowerCase(),
+                    total: Number(o.total || 0),
+                    items: o.items || []
+                })));
+            }
+        }
+    } catch (e) {}
+  };
+
+  const fetchHistory = async () => {
+    try {
+        const res = await fetch(`${API_URL}/orders/history`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) setHistory(await res.json());
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+    const load = async () => {
+       await refreshProducts(); 
+       await fetchActiveOrders();
+       await fetchHistory();
+       try {
+         const sRes = await fetch(`${API_URL}/settings`, { headers: { Authorization: `Bearer ${token}` } });
+         if(sRes.ok) { const s = await sRes.json(); setSettings({ upiId: s.upi_id, payeeName: s.payee_name }); }
+         if (userRole === 'admin') await refreshUsers(); 
+       } catch(e){}
+    };
+    load();
+    const interval = setInterval(fetchActiveOrders, 3000);
+    return () => clearInterval(interval);
+  }, [token, API_URL, userRole]);
+
+  useEffect(() => {
+    if (userRole !== 'admin' && activeTab === 'dashboard') {
+        setActiveTab('menu');
+    }
+  }, [userRole, activeTab]);
+
+  // --- HANDLERS ---
+  const handleAdminAddProduct = async () => { 
+      const rId = getRestaurantId();
+      const productPayload = { ...newItem, stock: newItem.stock || 0, restaurantId: rId };
+      await fetch(`${API_URL}/products`, { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, 
+          body: JSON.stringify(productPayload) 
+      }); 
+      setNewItem({ name: '', price: '', category: '', stock: '' }); 
+      setIsCreatingCategory(false); 
+      setIsAddingItem(false); 
+      refreshProducts(); 
+  };
+
+  const handleAdminAddUser = async () => { 
+    if (!newUser.username || !newUser.email || !newUser.password) {
+      return alert("Fill all fields");
+    }
+  
+    const res = await fetch(`${API_URL}/auth/staff`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        username: newUser.username,
+        email: newUser.email,
+        password: newUser.password,
+        role: newUser.role
+      })
+    });
+  
+    const data = await res.json();
+  
+    if (!res.ok) {
+      console.error(data);
+      alert(data.message || "Failed to create staff");
+      return;
+    }
+  
+    setNewUser({ username: '', email: '', password: '', role: 'cashier' });
+    refreshUsers();
+  };
+
+  const handleAdminDeleteUser = async (id) => { 
+      if(!confirm("Delete User?")) return; 
+      try { 
+          const res = await fetch(`${API_URL}/auth/users/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }); 
+          if(res.ok) setUsersList(prev => prev.filter(u => u.id !== id)); 
+      } catch(e) {} 
+  };
+
+  // --- DOCK LOGIC ---
+  const connectDock = async () => {
+    try {
+        if ('serial' in navigator) {
+            const port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 9600 });
+            setDockConnected(true);
+            alert("✅ Dock Connected Successfully!");
+        } else {
+            alert("⚠️ Web Serial API not supported in this browser.");
+        }
+    } catch (err) {
+        console.error("Dock Connection Failed:", err);
+        setDockConnected(false);
+    }
+  };
+
+  const sendToDock = async (tokenNum) => {
+    if (!dockConnected) {
+        alert("Dock not connected! Please click the Connect Dock button.");
+        return;
+    }
+    console.log(`Sending Token ${tokenNum} to Dock...`);
+  };
+
+  // Cart Logic
+  const cartSubtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const taxAmount = (Math.max(0, cartSubtotal - discount)) * (taxRate / 100);
+  const grandTotal = Math.round((Math.max(0, cartSubtotal - discount)) + taxAmount);
 
   const availableTokens = useMemo(() => {
     const used = orders.map(o => String(o.token));
-    return Array.from({ length: 50 }, (_, i) => String(i + 1)).filter(
-      t => !used.includes(t)
-    );
+    return Array.from({ length: 50 }, (_, i) => String(i + 1)).filter(t => !used.includes(t));
   }, [orders]);
 
-  useEffect(() => {
-    if (!availableTokens.includes(selectedToken)) {
-      setSelectedToken(availableTokens[0] || "1");
-    }
-  }, [availableTokens, selectedToken]);
+  useEffect(() => { if (availableTokens.length > 0 && !availableTokens.includes(selectedToken)) setSelectedToken(availableTokens[0]); }, [availableTokens, selectedToken]);
 
-  /* ===== UPI ===== */
-  const [upiData, setUpiData] = useState(null);
+  const addToCart = item => setCart(p => { const f = p.find(i => i.id === item.id); return f ? p.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i) : [...p, { ...item, quantity: 1 }]; });
+  const removeFromCart = item => setCart(p => { const f = p.find(i => i.id === item.id); if(!f) return p; if(f.quantity === 1) return p.filter(i => i.id !== item.id); return p.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i); });
 
-  /* ===== ESP ===== */
-  const [dockConnected, setDockConnected] = useState(false);
-  const writerRef = useRef(null);
-
-  const connectDock = async () => {
-    if (!("serial" in navigator)) {
-      alert("Web Serial API not supported");
-      return;
-    }
-    const port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
-    writerRef.current = port.writable.getWriter();
-    setDockConnected(true);
-  };
-
-  const sendTokenToESP = async tokenNum => {
-    if (!writerRef.current) return;
-    await writerRef.current.write(
-      new TextEncoder().encode(`TOKEN:${tokenNum}\n`)
-    );
-  };
-
-  /* ================= PRODUCTS ================= */
-  const fetchProducts = async () => {
-    const res = await fetch(`${API_URL}/products`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    const list = await res.json();
-
-    const normalized = list.map(p => ({
-      ...p,
-      id: Number(p.id),
-      price: Number(p.price),
-      stock: Number(p.stock)
-    }));
-
-    setRawProducts(normalized);
-
-    const grouped = {};
-    const cats = new Set();
-
-    normalized.forEach(p => {
-      const cat = p.category || "General";
-      cats.add(cat);
-      if (!grouped[cat]) grouped[cat] = [];
-      grouped[cat].push(p);
-    });
-
-    setMenu(grouped);
-    setCategories([...cats]);
-  };
-
-  useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  /* ================= CART ================= */
-  const addToCart = product => {
-    setCart(prev => {
-      const found = prev.find(p => p.id === product.id);
-      return found
-        ? prev.map(p =>
-            p.id === product.id
-              ? { ...p, quantity: p.quantity + 1 }
-              : p
-          )
-        : [...prev, { ...product, quantity: 1 }];
-    });
-  };
-
-  const updateQuantity = (id, delta) =>
-    setCart(prev =>
-      prev
-        .map(p =>
-          p.id === id ? { ...p, quantity: p.quantity + delta } : p
-        )
-        .filter(p => p.quantity > 0)
-    );
-
-  const removeFromCart = id =>
-    setCart(prev => prev.filter(p => p.id !== id));
-
-  const subtotal = cart.reduce(
-    (sum, i) => sum + i.price * i.quantity,
-    0
-  );
-
-  /* ================= ORDER ================= */
-  const finalizeOrder = async paymentMethod => {
+  const finalizeOrder = async (payData) => {
+    let method = typeof payData === 'object' ? payData.paymentMethod : payData;
     const payload = {
+      restaurantId: getRestaurantId(), 
+      paymentMethod: method, 
       token: Number(selectedToken),
-      paymentMethod,
-      items: cart.map(i => ({
-        productId: i.id,
-        name: i.name,
-        price: i.price,
-        quantity: i.quantity
-      }))
+      total: grandTotal,
+      items: cart.map(i => ({ productId: i.id, name: i.name, price: i.price, quantity: i.quantity }))
     };
+    try {
+      const res = await fetch(`${API_URL}/orders`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.message);
+      
+      if(dockConnected) sendToDock(selectedToken);
 
-    const res = await fetch(`${API_URL}/orders`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      alert(data.message);
-      return;
-    }
-
-    if (dockConnected) {
-      sendTokenToESP(selectedToken);
-    }
-
-    if (paymentMethod === "upi" && data.upi?.qr) {
-      setUpiData(data.upi);
-      return;
-    }
-
-    setOrders(prev => [
-      ...prev,
-      { id: data.orderId, token: selectedToken }
-    ]);
-
-    setCart([]);
-    setShowCheckout(false);
+      if (method === 'upi' && r.upi?.qr) setActiveUpiData(r.upi);
+      else {
+          const newO = { id: r.orderId || Date.now(), token: selectedToken, items: [...cart], startedAt: Date.now(), total: grandTotal, status: 'paid' };
+          setOrders(p => [...p, newO]);
+          setHistory(p => [{...newO, activeDate: new Date().toISOString()}, ...p]);
+          setCart([]); setDiscount(0); setShowCheckout(false);
+          setTimeout(fetchActiveOrders, 500);
+      }
+    } catch (e) { alert(e.message); setShowCheckout(false); }
   };
 
-  /* ================= UI ================= */
+  const handleMarkReady = async (id) => {
+      if(!confirm("Complete Order?")) return;
+      try {
+        // Call your existing DELETE endpoint
+        const res = await fetch(`${API_URL}/orders/${id}`, { 
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (!res.ok) throw new Error('Failed to complete order');
+        
+        // Update local state after backend confirms
+        const finished = orders.find(o => String(o.id) === String(id));
+        setOrders(p => p.filter(o => String(o.id) !== String(id)));
+        if(finished) setHistory(p => [{...finished, payment_status: 'completed', activeDate: new Date().toISOString()}, ...p]);
+      } catch (e) {
+        console.error('Failed to complete order:', e);
+        alert('Failed to complete order');
+      }
+  };
+
   return (
-    <div className={`flex flex-col h-screen ${isDarkMode ? "bg-black text-white" : "bg-white text-black"}`}>
+    <div className={`flex flex-col h-screen overflow-hidden ${theme.bg.main} ${theme.text.main}`} style={{ fontFamily: FONTS.sans }}>
       
-      {/* TOP BAR */}
-      <header className="h-14 border-b flex items-center justify-between px-6">
-        <div className="flex items-center gap-4">
-          <strong>POS</strong>
+      {/* ────── TOP HEADER BAR ────── */}
+      <header className={`h-16 flex items-center justify-between px-6 border-b ${theme.border.default} ${theme.bg.card}`}>
+        {/* Left: Logo + Navigation */}
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-xl ${theme.bg.subtle}`}>
+              <Settings size={20} />
+            </div>
+            <h1 className="text-lg font-semibold">POS</h1>
+          </div>
 
-          <button onClick={connectDock} className="text-xs flex gap-2">
-            <Usb size={14} />
-            {dockConnected ? "ESP Connected" : "Connect ESP"}
-          </button>
-
-          <button onClick={() => setShowKitchen(true)} className="text-xs flex gap-2">
-            <Bell size={14} /> Kitchen
-          </button>
+          {/* Navigation Tabs */}
+          <nav className="flex items-center gap-1">
+            {[
+              { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', role: 'admin' },
+              { id: 'menu', icon: Coffee, label: 'Menu' },
+              { id: 'kitchen', icon: Bell, label: 'Kitchen', role: 'cashier', action: () => setShowActiveOrders(true), badge: orders.length },
+              { id: 'users', icon: User, label: 'Staff', role: 'admin' },
+            ].map(item => (
+              (!item.role || item.role === userRole) && (
+                <button 
+                  key={item.id}
+                  onClick={() => item.action ? item.action() : setActiveTab(item.id)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors relative
+                    ${activeTab === item.id && !item.action 
+                      ? `${theme.bg.active} ${theme.text.main}`
+                      : theme.button.ghost}`}
+                >
+                  <item.icon size={16} />
+                  <span>{item.label}</span>
+                  {item.badge > 0 && (
+                    <span className={`${COMMON_STYLES.badge(isDarkMode)} text-[10px] min-w-[18px] h-[18px] flex items-center justify-center`}>
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              )
+            ))}
+          </nav>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="text-right text-xs">
-            <div className="font-semibold">{username}</div>
-            <div className="uppercase opacity-70">{userRole}</div>
-          </div>
-          <User size={18} />
-          <button onClick={onToggleTheme}>
-            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+        {/* Right: Dock + Theme + Settings + User + Logout */}
+        <div className="flex items-center gap-3">
+          {/* Dock Connect Button (cashier only) */}
+          {userRole !== 'admin' && (
+            <button
+              onClick={connectDock}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all
+                ${dockConnected
+                  ? `${theme.bg.active} ${theme.border.default} ${theme.text.main}`
+                  : `${theme.border.default} ${theme.button.ghost}`}`}
+            >
+              <Wifi size={16} className={dockConnected ? 'animate-pulse' : ''} />
+              <span className="hidden sm:inline">{dockConnected ? 'Dock' : 'Connect'}</span>
+            </button>
+          )}
+
+          {/* Theme Toggle */}
+          <button 
+            onClick={onToggleTheme} 
+            className={`p-2 rounded-lg ${theme.button.ghost}`}
+          >
+            {isDarkMode ? <Sun size={18}/> : <Moon size={18}/>}
           </button>
-          <button onClick={onLogout}>
-            <LogOut size={16} />
+
+          {/* Settings (admin only) */}
+          {userRole === 'admin' && (
+            <button 
+              onClick={() => setSettingsOpen(true)}
+              className={`p-2 rounded-lg ${theme.button.ghost}`}
+            >
+              <Settings size={18}/>
+            </button>
+          )}
+
+          {/* User Info */}
+          <div className="flex items-center gap-3">
+            <div className="text-right hidden sm:block">
+              <p className="text-sm font-medium">{user?.username || 'Admin'}</p>
+              <p className={`text-xs uppercase font-medium tracking-wider ${theme.text.tertiary}`}>{userRole}</p>
+            </div>
+            <div className={`h-8 w-8 rounded-full flex items-center justify-center border ${theme.border.default} ${theme.bg.subtle}`}>
+              <User size={16} className={theme.text.secondary}/>
+            </div>
+          </div>
+
+          {/* Logout */}
+          <button 
+            onClick={onLogout} 
+            className={`p-2 rounded-lg ${theme.button.ghost}`}
+          >
+            <LogOut size={18} />
           </button>
         </div>
       </header>
 
-      <main className="flex flex-1 overflow-hidden">
-        {/* PRODUCTS */}
-        <div className="flex-1 overflow-auto">
-          <POSView
-            menu={menu}
-            categories={categories}
-            selectedCategory={selectedCategory}
-            setSelectedCategory={setSelectedCategory}
-            onAddToCart={addToCart}
-            userRole={userRole}
-            isDarkMode={isDarkMode}
-            rawProducts={rawProducts}
-          />
-        </div>
-
-        {/* CART */}
-        <aside className="w-80 border-l flex flex-col">
-          <div className="p-4 font-semibold flex justify-between">
-            <span>Cart</span>
-            <select
-              value={selectedToken}
-              onChange={e => setSelectedToken(e.target.value)}
-              className="text-xs border rounded px-2"
-            >
-              {availableTokens.map(t => (
-                <option key={t} value={t}>Token {t}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex-1 p-4 space-y-3">
-            {cart.map(item => (
-              <div key={item.id} className="border p-2 rounded">
-                <div className="flex justify-between">
-                  {item.name}
-                  <button onClick={() => removeFromCart(item.id)}>
-                    <X size={12} />
-                  </button>
+      {/* MAIN CONTENT */}
+      <main className={`flex-1 flex flex-col overflow-hidden ${theme.bg.main}`}>
+          <div className="flex-1 overflow-y-auto p-0 relative">
+              {activeTab === 'dashboard' && userRole === 'admin' && (
+                <div className="p-8">
+                    <SalesReport orders={orders} history={history} products={rawProducts} isDarkMode={isDarkMode} />
                 </div>
-                <div className="flex justify-between mt-2">
-                  <div className="flex gap-2">
-                    <button onClick={() => updateQuantity(item.id, -1)}>
-                      <Minus size={12} />
-                    </button>
-                    {item.quantity}
-                    <button onClick={() => updateQuantity(item.id, 1)}>
-                      <Plus size={12} />
-                    </button>
+              )}
+              
+              {activeTab === 'menu' && (
+  <POSView 
+    menu={menu}
+    categories={userRole === 'admin' ? [] : categories}
+    cart={cart}
+    orders={orders}
+
+    selectedCategory={userRole === 'admin' ? null : selectedCategory}
+    setSelectedCategory={userRole === 'admin' ? () => {} : setSelectedCategory}
+
+    availableTokens={availableTokens}
+    selectedToken={selectedToken}
+    onSetToken={setSelectedToken}
+
+    onAddToCart={addToCart}
+    onRemoveFromCart={removeFromCart}
+    onCheckout={() => setShowCheckout(true)}
+
+    isDarkMode={isDarkMode}
+    discount={discount}
+    setDiscount={setDiscount}
+    taxRate={taxRate}
+
+    onConnectDock={connectDock}
+    dockConnected={dockConnected}
+    onCallCustomer={(t) => sendToDock(t)}
+
+    userRole={userRole}
+
+    isAddingItem={isAddingItem}
+    setIsAddingItem={setIsAddingItem}
+    newItem={newItem}
+    setNewItem={setNewItem}
+    isCreatingCategory={isCreatingCategory}
+    setIsCreatingCategory={setIsCreatingCategory}
+
+    handleAdminAddProduct={handleAdminAddProduct}
+    handleAdminDeleteProduct={(id) => {
+      if (confirm("Delete?"))
+        fetch(`${API_URL}/products/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        }).then(refreshProducts);
+    }}
+
+    rawProducts={rawProducts}
+  />
+)}
+
+              {activeTab === 'users' && userRole === 'admin' && (
+                  <div className="max-w-4xl mx-auto p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      <h2 className="text-2xl font-semibold mb-8">Staff Management</h2>
+                      
+                      {/* Add User */}
+                      <div className={`p-6 rounded-lg border mb-8 ${COMMON_STYLES.card(isDarkMode)}`}>
+                          <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${theme.text.main}`}>
+                              <Plus size={16} /> Add User
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                              <div className="col-span-1">
+                                  <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Username</label>
+                                  <input 
+                                      className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} 
+                                      value={newUser.username} 
+                                      onChange={e => setNewUser({...newUser, username: e.target.value})} 
+                                      placeholder="john_doe"
+                                  />
+                              </div>
+                              <div className="col-span-1">
+                                  <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Email</label>
+                                  <input 
+                                      className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} 
+                                      value={newUser.email} 
+                                      onChange={e => setNewUser({...newUser, email: e.target.value})} 
+                                      placeholder="email@pos.com"
+                                  />
+                              </div>
+                              <div className="col-span-1">
+                                  <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Password</label>
+                                  <input 
+                                      className={`w-full ${COMMON_STYLES.input(isDarkMode)}`} 
+                                      type="password" 
+                                      value={newUser.password} 
+                                      onChange={e => setNewUser({...newUser, password: e.target.value})} 
+                                      placeholder="••••"
+                                  />
+                              </div>
+                              <div className="col-span-1 flex gap-2">
+                                  <div className="flex-1">
+                                      <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Role</label>
+                                      <select 
+                                          className={`w-full ${COMMON_STYLES.select(isDarkMode)}`} 
+                                          value={newUser.role} 
+                                          onChange={e => setNewUser({...newUser, role: e.target.value})}
+                                      >
+                                          <option value="cashier">Cashier</option>
+                                          <option value="manager">Manager</option>
+                                          <option value="admin">Admin</option>
+                                      </select>
+                                  </div>
+                                  <button 
+                                      onClick={handleAdminAddUser} 
+                                      className={`px-4 py-2 rounded-md text-sm font-medium transition-colors outline-none mt-auto ${theme.button.primary}`}
+                                  >
+                                      Create
+                                  </button>
+                              </div>
+                          </div>
+                      </div>
+                      
+                      {/* User List */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {usersList.map(u => (
+                              <div 
+                                  key={u.id} 
+                                  className={`p-5 rounded-lg border flex justify-between items-center group transition-colors ${COMMON_STYLES.card(isDarkMode)} ${theme.border.hover}`}
+                              >
+                                  <div className="flex items-center gap-4">
+                                      <div className={`p-3 rounded-md ${theme.bg.subtle}`}>
+                                          <User size={20}/>
+                                      </div>
+                                      <div>
+                                          <p className="font-medium text-sm">{u.username || u.email.split('@')[0]}</p>
+                                          <p className={`text-xs font-medium ${theme.text.tertiary}`}>{u.role}</p>
+                                          <p className={`text-xs ${theme.text.muted}`}>{u.email}</p>
+                                      </div>
+                                  </div>
+                                  <button 
+                                      onClick={() => handleAdminDeleteUser(u.id)} 
+                                      className={`p-2 rounded-md opacity-0 group-hover:opacity-100 transition-all outline-none ${theme.bg.hover}`}
+                                  >
+                                      <Trash2 size={16} className={theme.text.secondary}/>
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
                   </div>
-                  ₹{item.price * item.quantity}
-                </div>
-              </div>
-            ))}
+              )}
           </div>
-
-          <div className="p-4 border-t">
-            <div className="flex justify-between mb-2">
-              <span>Total</span>
-              <strong>₹{subtotal}</strong>
-            </div>
-            <button
-              disabled={!cart.length}
-              onClick={() => setShowCheckout(true)}
-              className="w-full bg-blue-600 text-white py-2 rounded disabled:opacity-50"
-            >
-              Checkout
-            </button>
-          </div>
-        </aside>
       </main>
 
-      {/* CHECKOUT */}
-      <CheckoutModal
-        isOpen={showCheckout}
-        onClose={() => setShowCheckout(false)}
-        onConfirm={finalizeOrder}
-        grandTotal={subtotal}
-        isDarkMode={isDarkMode}
-        backendUpiData={upiData}
+      <CheckoutModal 
+          isOpen={showCheckout} 
+          onClose={() => setShowCheckout(false)} 
+          onConfirm={finalizeOrder} 
+          cartSubtotal={cartSubtotal} 
+          taxAmount={taxAmount} 
+          discount={discount} 
+          grandTotal={grandTotal} 
+          orderId={orders.length + 1} 
+          isDarkMode={isDarkMode} 
+          upiId={settings.upiId} 
+          payeeName={settings.payeeName} 
+          backendUpiData={activeUpiData} 
       />
-
-      <ActiveOrdersDrawer
-        isOpen={showKitchen}
-        onClose={() => setShowKitchen(false)}
-        orders={orders}
-        isDarkMode={isDarkMode}
+      <ActiveOrdersDrawer 
+          isOpen={showActiveOrders} 
+          onClose={() => setShowActiveOrders(false)} 
+          orders={orders} 
+          onCompleteOrder={handleMarkReady} 
+          onCallCustomer={(t) => sendToDock(t)} 
+          isDarkMode={isDarkMode} 
       />
+      {userRole === 'admin' && (
+        <AdminSettingsModal 
+        open={settingsOpen} 
+        onClose={() => setSettingsOpen(false)} 
+        restaurantId={getRestaurantId()} 
+        />
+)}
     </div>
   );
 }
