@@ -11,12 +11,12 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const { name, price, category } = req.body;
+  const { stock,name, price, category } = req.body;
 
   const [result] = await db.query(
-    `INSERT INTO products (restaurant_id, name, price, category)
-     VALUES (?, ?, ?, ?)`,
-    [req.user.restaurantId, name, price, category]
+    `INSERT INTO products (restaurant_id, name, price,stock, category)
+     VALUES (?, ?, ?, ?,?)`,
+    [req.user.restaurantId, name, price,stock, category]
   );
 
   res.json({ id: result.insertId });
