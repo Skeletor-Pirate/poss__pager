@@ -72,6 +72,13 @@ exports.getActiveOrders = async (req, res) => {
     query += ` ORDER BY created_at ASC`;
 
     const [orders] = await db.query(query, [restaurantId]);
+    for (let order of orders) {
+      const [items] = await db.query(
+        `SELECT name, quantity FROM order_items WHERE order_id = ?`,
+        [order.id]
+      );
+      order.items = items; // Attach items to the order object
+    }
     res.json(orders);
   } catch (err) {
     console.error("Get Orders Error:", err);

@@ -392,7 +392,10 @@ export default function RestaurantVendorUI({
     // 2. Capture the EXACT token currently selected in the UI
     // We convert to Number to match your DB schema (INT)
     const tokenToSave = Number(selectedToken);
-  
+    const localItems = cart.map(i => ({ 
+      name: i.name, 
+      quantity: i.quantity 
+    }));
     const payload = {
       restaurantId: getRestaurantId(),
       paymentMethod: method,
@@ -433,7 +436,7 @@ export default function RestaurantVendorUI({
         const newO = {
           id: r.orderId || Date.now(),
           token: tokenToSave, // Store as the number selected
-          items: [], // Keeping empty since you don't want to show items
+          items: localItems, // Keeping empty since you don't want to show items
           startedAt: new Date().toISOString(),
           total: grandTotal,
           payment_status: "pending", // Must be 'pending' to show in your kitchen filter
@@ -448,7 +451,7 @@ export default function RestaurantVendorUI({
         setShowCheckout(false);
   
         // 5. Re-sync with server after a short delay to ensure DB consistency
-        setTimeout(fetchActiveOrders, 500);
+        setTimeout(fetchActiveOrders, 1500);
       }
     } catch (e) {
       console.error("Finalize Error:", e);
