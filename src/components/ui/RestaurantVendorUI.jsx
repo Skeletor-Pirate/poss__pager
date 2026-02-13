@@ -26,6 +26,7 @@ export default function RestaurantVendorUI({
   isDarkMode,
   onToggleTheme,
 }) {
+  // Use localhost by default for development/fixes
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
   const theme = getTheme(isDarkMode);
   const token = localStorage.getItem("auth_token");
@@ -58,7 +59,7 @@ export default function RestaurantVendorUI({
   const [dockConnected, setDockConnected] = useState(false);
   const portRef = useRef(null);
 
-  // Admin State (Shared with POSView)
+  // Admin State
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [newItem, setNewItem] = useState({
     name: "",
@@ -320,6 +321,7 @@ export default function RestaurantVendorUI({
 
   const availableTokens = useMemo(() => {
     const used = orders.map((o) => String(o.token));
+    // Set to 50 tokens instead of 6
     return Array.from({ length: 50 }, (_, i) => String(i + 1)).filter(
       (t) => !used.includes(t)
     );
@@ -457,6 +459,7 @@ export default function RestaurantVendorUI({
       className={`flex flex-col h-screen overflow-hidden ${theme.bg.main} ${theme.text.main}`}
       style={{ fontFamily: FONTS.sans }}
     >
+      {/* Header */}
       <header
         className={`h-16 flex items-center justify-between px-6 border-b ${theme.border.default} ${theme.bg.card}`}
       >
@@ -532,7 +535,6 @@ export default function RestaurantVendorUI({
               </span>
             </button>
           )}
-          {/* ✅ FIXED: Uses correct prop name */}
           <button
             onClick={onToggleTheme}
             className={`p-2 rounded-lg ${theme.button.ghost}`}
