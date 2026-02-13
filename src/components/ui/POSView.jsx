@@ -29,7 +29,7 @@ export default function POSView({
   isCreatingCategory,
   setIsCreatingCategory,
   handleAdminAddProduct,
-  handleAdminUpdateProduct, // ✅ Received new prop
+  handleAdminUpdateProduct, 
   handleAdminDeleteProduct,
   rawProducts, 
 }) {
@@ -64,24 +64,21 @@ export default function POSView({
   const startEdit = (product) => {
       setIsAddingItem(true);
       setIsEditing(true);
-      // Populate the parent state with this product's data
       setNewItem({
           name: product.name,
           price: product.price,
           stock: product.stock, 
           category: product.category,
-          id: product.id // Store ID to know we are editing
+          id: product.id 
       });
   };
 
   const handleSave = async () => {
-      // ✅ LOGIC: If editing, call update, else call add
       if (isEditing) {
           await handleAdminUpdateProduct(); 
       } else {
           await handleAdminAddProduct(); 
       }
-      // Reset local editing state (parent handles newItem reset)
       setIsEditing(false);
   };
 
@@ -106,18 +103,21 @@ export default function POSView({
             />
           </div>
 
-          <div className="flex items-center gap-1 overflow-x-auto pb-1">
-            {["All", ...categories].map(cat => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all
-                  ${selectedCategory === cat ? `${theme.bg.active} ${theme.text.main}` : `${theme.button.ghost}`}`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          {/* ✅ FIX: Only show Category Tabs if NOT Admin */}
+          {userRole !== 'admin' && (
+            <div className="flex items-center gap-1 overflow-x-auto pb-1">
+              {["All", ...categories].map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all
+                    ${selectedCategory === cat ? `${theme.bg.active} ${theme.text.main}` : `${theme.button.ghost}`}`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ===========================
@@ -139,7 +139,6 @@ export default function POSView({
                     <input type="number" className={COMMON_STYLES.input(isDarkMode)} placeholder="0" value={newItem.price} onChange={e => setNewItem({ ...newItem, price: e.target.value })} />
                 </div>
                 
-                {/* STOCK INPUT FIX */}
                 <div className="col-span-1">
                     <label className={`text-xs font-medium uppercase mb-1.5 block ${theme.text.secondary}`}>Stock</label>
                     <input 
@@ -229,7 +228,6 @@ export default function POSView({
                       <th className="p-4 text-right">Actions</th>
                     </tr>
                   </thead>
-                  {/* ✅ CRASH FIX: Removed theme.divide.default and replaced with a safe class */}
                   <tbody className={`divide-y ${isDarkMode ? 'divide-zinc-800' : 'divide-gray-200'}`}>
                     {rawProducts.map(p => (
                       <tr key={p.id} className={`group hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}>
@@ -238,11 +236,9 @@ export default function POSView({
                         <td className="p-4"><div className="flex items-center gap-2"><Box size={14} className={p.stock < 5 ? "text-red-500" : theme.text.tertiary} /> {p.stock}</div></td>
                         <td className="p-4 font-mono">₹{p.price}</td>
                         <td className="p-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                           {/* EDIT BUTTON */}
                           <button onClick={() => startEdit(p)} className={`p-2 rounded-md hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900 dark:hover:text-blue-300 transition-colors ${theme.text.secondary}`}>
                             <Edit2 size={16} />
                           </button>
-                          {/* DELETE BUTTON */}
                           <button onClick={() => handleAdminDeleteProduct(p.id)} className={`p-2 rounded-md hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900 dark:hover:text-red-300 transition-colors ${theme.text.secondary}`}>
                             <Trash2 size={16} />
                           </button>

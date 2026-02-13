@@ -56,8 +56,8 @@ export default function RestaurantVendorUI({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [dockConnected, setDockConnected] = useState(false);
-  // Add this with your other refs/state
   const portRef = useRef(null);
+
   // Admin State (Shared with POSView)
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [newItem, setNewItem] = useState({
@@ -191,7 +191,6 @@ export default function RestaurantVendorUI({
   // 1. ADD Product
   const handleAdminAddProduct = async () => {
     const rId = getRestaurantId();
-    // Ensure stock is sent as a number, defaulting to 0
     const stockValue = newItem.stock ? parseInt(newItem.stock) : 0;
     const productPayload = { ...newItem, stock: stockValue, restaurantId: rId };
 
@@ -210,7 +209,7 @@ export default function RestaurantVendorUI({
     refreshProducts();
   };
 
-  // 2. UPDATE Product (New Function for PUT Route)
+  // 2. UPDATE Product
   const handleAdminUpdateProduct = async () => {
     if (!newItem.id) return alert("Error: No product ID found for update");
 
@@ -282,10 +281,7 @@ export default function RestaurantVendorUI({
       if ("serial" in navigator) {
         const port = await navigator.serial.requestPort();
         await port.open({ baudRate: 9600 });
-
-        // STORE THE PORT HERE
         portRef.current = port;
-
         setDockConnected(true);
         alert("✅ Dock Connected Successfully!");
       } else {
@@ -298,27 +294,19 @@ export default function RestaurantVendorUI({
   };
 
   const sendToDock = async (tokenNum) => {
-    // Check if port exists and is writable
     if (!dockConnected || !portRef.current || !portRef.current.writable) {
       alert("Dock not connected or not writable! Please connect dock.");
       return;
     }
-
-    // 1. Get the writer
     const writer = portRef.current.writable.getWriter();
-
     try {
-      // 2. Write the data
-
       console.log(`Sending Token ${tokenNum} to Dock...`);
-
       const data = new TextEncoder().encode(`*${tokenNum}*\n`);
       await writer.write(data);
     } catch (error) {
       console.error("Error writing to serial port:", error);
       alert("Failed to send to dock");
     } finally {
-      // 3. CRITICAL: Release the lock so the port can be used again later
       writer.releaseLock();
     }
   };
@@ -337,17 +325,12 @@ export default function RestaurantVendorUI({
     );
   }, [orders]);
 
-  // Only auto-switch if the CURRENT selected token is actually in use (invalid)
-  // or if no token is selected at all.
   useEffect(() => {
     if (availableTokens.length > 0) {
-      // If current selection is valid, DO NOTHING. Keep user selection.
       if (availableTokens.includes(selectedToken)) return;
-
-      // If current selection is invalid (used), pick the first available one.
       setSelectedToken(availableTokens[0]);
     }
-  }, [availableTokens, selectedToken]); // Keep dependencies the same
+  }, [availableTokens, selectedToken]);
 
   const addToCart = (item) =>
     setCart((p) => {
@@ -368,9 +351,7 @@ export default function RestaurantVendorUI({
       );
     });
 
-  // --- 1. FIXED: Handle the Checkout Button Click ---
   const handleCheckoutClick = () => {
-    // FORCE a log to see if the function even fires
     console.log("!!! handleCheckoutClick TRIGGERED !!!");
     console.log("Current selectedToken:", selectedToken);
     console.log("Dock Status:", dockConnected);
@@ -384,22 +365,17 @@ export default function RestaurantVendorUI({
     setShowCheckout(true);
   };
 
-  // --- 2. FIXED: Handle the Database Save ---
   const finalizeOrder = async (payData) => {
-    // 1. Identify the payment method
     let method = typeof payData === "object" ? payData.paymentMethod : payData;
-  
-    // 2. Capture the EXACT token currently selected in the UI
-    // We convert to Number to match your DB schema (INT)
     const tokenToSave = Number(selectedToken);
-    const localItems = cart.map(i => ({ 
-      name: i.name, 
-      quantity: i.quantity 
+    const localItems = cart.map((i) => ({
+      name: i.name,
+      quantity: i.quantity,
     }));
     const payload = {
       restaurantId: getRestaurantId(),
       paymentMethod: method,
-      token: tokenToSave, // This is the most important line
+      token: tokenToSave,
       total: grandTotal,
       items: cart.map((i) => ({
         productId: i.id,
@@ -408,7 +384,7 @@ export default function RestaurantVendorUI({
         quantity: i.quantity,
       })),
     };
-  
+
     try {
       console.log("Saving order to database...", payload);
       const res = await fetch(`${API_URL}/orders`, {
@@ -419,10 +395,10 @@ export default function RestaurantVendorUI({
         },
         body: JSON.stringify(payload),
       });
-  
+
       const r = await res.json();
       if (!res.ok) throw new Error(r.message || "Failed to save order");
-  
+
       if (method === "upi") {
         const qrConfig = {
           pa: settings.upiId,
@@ -432,25 +408,19 @@ export default function RestaurantVendorUI({
         const qrUrl = getUPIQR(qrConfig, grandTotal, tokenToSave, r.orderId);
         setActiveUpiData({ qr: qrUrl });
       } else {
-        // 3. Update the Kitchen State IMMEDIATELY for Cash/Card
         const newO = {
           id: r.orderId || Date.now(),
-          token: tokenToSave, // Store as the number selected
-          items: localItems, // Keeping empty since you don't want to show items
+          token: tokenToSave,
+          items: localItems,
           startedAt: new Date().toISOString(),
           total: grandTotal,
-          payment_status: "pending", // Must be 'pending' to show in your kitchen filter
+          payment_status: "pending",
         };
-  
-        // Add to the top of the list so the kitchen sees it instantly
+
         setOrders((p) => [newO, ...p]);
-        
-        // 4. Reset POS UI
         setCart([]);
         setDiscount(0);
         setShowCheckout(false);
-  
-        // 5. Re-sync with server after a short delay to ensure DB consistency
         setTimeout(fetchActiveOrders, 1500);
       }
     } catch (e) {
@@ -493,9 +463,6 @@ export default function RestaurantVendorUI({
       >
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-xl ${theme.bg.subtle}`}>
-              <Settings size={20} />
-            </div>
             <h1 className="text-lg font-semibold">POS</h1>
           </div>
           <nav className="flex items-center gap-1">
@@ -620,7 +587,8 @@ export default function RestaurantVendorUI({
           {activeTab === "menu" && (
             <POSView
               menu={menu}
-              categories={userRole === "admin" ? [] : categories}
+              // FIX: Always pass full categories list, never []
+              categories={categories}
               cart={cart}
               orders={orders}
               selectedCategory={userRole === "admin" ? null : selectedCategory}
@@ -647,7 +615,6 @@ export default function RestaurantVendorUI({
               setNewItem={setNewItem}
               isCreatingCategory={isCreatingCategory}
               setIsCreatingCategory={setIsCreatingCategory}
-              // ✅ PASSED HANDLERS FOR ADD & UPDATE
               handleAdminAddProduct={handleAdminAddProduct}
               handleAdminUpdateProduct={handleAdminUpdateProduct}
               handleAdminDeleteProduct={(id) => {
