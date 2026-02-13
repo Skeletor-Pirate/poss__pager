@@ -457,7 +457,6 @@ export default function RestaurantVendorUI({
       className={`flex flex-col h-screen overflow-hidden ${theme.bg.main} ${theme.text.main}`}
       style={{ fontFamily: FONTS.sans }}
     >
-      {/* Header */}
       <header
         className={`h-16 flex items-center justify-between px-6 border-b ${theme.border.default} ${theme.bg.card}`}
       >
@@ -533,6 +532,7 @@ export default function RestaurantVendorUI({
               </span>
             </button>
           )}
+          {/* ✅ FIXED: Uses correct prop name */}
           <button
             onClick={onToggleTheme}
             className={`p-2 rounded-lg ${theme.button.ghost}`}
@@ -587,7 +587,6 @@ export default function RestaurantVendorUI({
           {activeTab === "menu" && (
             <POSView
               menu={menu}
-              // FIX: Always pass full categories list, never []
               categories={categories}
               cart={cart}
               orders={orders}
